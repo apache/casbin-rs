@@ -89,7 +89,7 @@ name = "benchmark"
 harness = false
 
 [dev-dependencies]
-criterion = { version = "0.3.5", features = ["html_reports"] }
+criterion = { version = "0.8.2", features = ["html_reports"] }
 
 [lib]
 bench = false
