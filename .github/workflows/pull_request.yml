@@ -1,5 +1,5 @@
 on:
-  pull_request_target:
+  pull_request:
     branches: [ master ]
 name: Benchmarks
 jobs:
@@ -7,10 +7,8 @@ jobs:
     name: run benchmark
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
         with:
-          ref: ${{github.event.pull_request.head.ref}}
-          repository: ${{github.event.pull_request.head.repo.full_name}}
           fetch-depth: 0
       - uses: actions-rs/toolchain@v1
         with:
@@ -29,10 +27,25 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
-      - name: Install critcmp with force
+      - name: Install critcmp
         run: cargo install critcmp --force
-      - uses: smrpn/criterion-compare-action@master 
+      - name: Run benchmarks on master
+        run: |
+          git checkout origin/master
+          cd benches && cargo bench -- --save-baseline master
+      - name: Run benchmarks on PR
+        run: |
+          git checkout ${{ github.sha }}
+          cd benches && cargo bench -- --save-baseline changes
+      - name: Generate benchmark comparison
+        run: |
+          cd benches && critcmp master changes > $GITHUB_WORKSPACE/benchmark_result.txt 2>&1 || true
+      - name: Save PR number
+        run: echo "${{ github.event.pull_request.number }}" > pr_number.txt
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
         with:
-          cwd: benches
-          token: ${{ secrets.GITHUB_TOKEN }}
-
+          name: benchmark-results
+          path: |
+            benchmark_result.txt
+            pr_number.txt
