@@ -203,10 +203,7 @@ pub fn dynamic_to_str(d: &Dynamic) -> Cow<'_, str> {
 /// For example, "/foo/bar" matches "/foo/*"
 pub fn key_match(key1: &str, key2: &str) -> bool {
     if let Some(i) = key2.find('*') {
-        if key1.len() > i {
-            return key1[..i] == key2[..i];
-        }
-        key1[..] == key2[..i]
+        key1.starts_with(&key2[..i])
     } else {
         key1 == key2
     }
@@ -217,7 +214,7 @@ pub fn key_match(key1: &str, key2: &str) -> bool {
 /// "bar/foo" will be returned.
 pub fn key_get(key1: &str, key2: &str) -> String {
     if let Some(i) = key2.find('*') {
-        if key1.len() > i && key1[..i] == key2[..i] {
+        if key1.len() > i && key1.starts_with(&key2[..i]) {
             return key1[i..].to_string();
         }
     }
@@ -441,6 +438,8 @@ mod tests {
         assert!(key_match("/foo/bar", "/foo/*"));
         assert!(!key_match("/bar/foo", "/foo/*"));
         assert!(key_match("/bar", "/ba*"));
+        assert!(!key_match("ééééé", "/foo/*"));
+        assert!(key_match("/éé/bar", "/éé/*"));
     }
 
     #[test]
@@ -454,6 +453,8 @@ mod tests {
         assert_eq!(key_get("/foobar", "/foo"), "");
         assert_eq!(key_get("/foobar", "/foo*"), "bar");
         assert_eq!(key_get("/foobar", "/foo/*"), "");
+        assert_eq!(key_get("ééééé", "/foo/*"), "");
+        assert_eq!(key_get("/éé/bar", "/éé/*"), "bar");
     }
 
     #[test]
