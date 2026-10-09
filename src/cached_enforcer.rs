@@ -178,6 +178,23 @@ impl CoreApi for CachedEnforcer {
     }
 
     #[inline]
+    fn get_named_role_manager(
+        &self,
+        ptype: &str,
+    ) -> Option<Arc<RwLock<dyn RoleManager>>> {
+        self.enforcer.get_named_role_manager(ptype)
+    }
+
+    #[inline]
+    fn set_named_role_manager(
+        &mut self,
+        ptype: &str,
+        rm: Arc<RwLock<dyn RoleManager>>,
+    ) -> Result<()> {
+        self.enforcer.set_named_role_manager(ptype, rm)
+    }
+
+    #[inline]
     async fn set_model<M: TryIntoModel>(&mut self, m: M) -> Result<()> {
         self.enforcer.set_model(m).await
     }

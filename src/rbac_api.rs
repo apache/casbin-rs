@@ -1084,7 +1084,8 @@ mod tests {
 
         use crate::model::key_match2;
 
-        e.get_role_manager()
+        e.get_named_role_manager("g2")
+            .unwrap()
             .write()
             .matching_fn(Some(key_match2), None);
 
@@ -1099,15 +1100,10 @@ mod tests {
         assert!(e.enforce(("bob", "/pen/1", "GET")).unwrap());
         assert!(e.enforce(("bob", "/pen/2", "GET")).unwrap());
 
-        assert_eq!(
-            vec!["book_group"],
-            sort_unstable(e.get_implicit_roles_for_user("/book/1", None))
-        );
-
-        assert_eq!(
-            vec!["pen_group"],
-            sort_unstable(e.get_implicit_roles_for_user("/pen/1", None))
-        );
+        let rm = e.get_named_role_manager("g2").unwrap();
+        assert_eq!(vec!["book_group"], rm.read().get_roles("/book/1", None));
+        assert_eq!(vec!["pen_group"], rm.read().get_roles("/pen/1", None));
+        assert!(e.get_implicit_roles_for_user("/book/1", None).is_empty());
     }
 
     #[cfg(not(target_arch = "wasm32"))]

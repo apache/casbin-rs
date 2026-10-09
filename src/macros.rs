@@ -47,7 +47,7 @@ macro_rules! get_or_err_with_context {
 #[macro_export]
 macro_rules! register_g_function {
     ($enforcer:ident, $fname:ident, $ast:ident) => {{
-        let rm = Arc::clone(&$enforcer.rm);
+        let rm = Arc::clone(&$enforcer.rm_map[$fname]);
         let count = $ast.value.matches('_').count();
 
         if count == 2 {

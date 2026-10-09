@@ -21,12 +21,12 @@ pub trait Model: Send + Sync {
     fn get_mut_model(&mut self) -> &mut HashMap<String, AssertionMap>;
     fn build_role_links(
         &mut self,
-        rm: Arc<RwLock<dyn RoleManager>>,
+        rm_map: &HashMap<String, Arc<RwLock<dyn RoleManager>>>,
     ) -> Result<()>;
     #[cfg(feature = "incremental")]
     fn build_incremental_role_links(
         &mut self,
-        rm: Arc<RwLock<dyn RoleManager>>,
+        rm_map: &HashMap<String, Arc<RwLock<dyn RoleManager>>>,
         d: EventData,
     ) -> Result<()>;
     fn add_policy(&mut self, sec: &str, ptype: &str, rule: Vec<String>)

@@ -48,6 +48,15 @@ pub trait CoreApi: Send + Sync {
         &mut self,
         rm: Arc<RwLock<dyn RoleManager>>,
     ) -> Result<()>;
+    fn get_named_role_manager(
+        &self,
+        ptype: &str,
+    ) -> Option<Arc<RwLock<dyn RoleManager>>>;
+    fn set_named_role_manager(
+        &mut self,
+        ptype: &str,
+        rm: Arc<RwLock<dyn RoleManager>>,
+    ) -> Result<()>;
     #[cfg(feature = "logging")]
     fn get_logger(&self) -> &dyn Logger;
     #[cfg(feature = "logging")]

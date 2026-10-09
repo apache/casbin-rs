@@ -62,7 +62,7 @@ pub struct Enforcer {
     adapter: Box<dyn Adapter>,
     fm: FunctionMap,
     eft: Box<dyn Effector>,
-    rm: Arc<RwLock<dyn RoleManager>>,
+    rm_map: HashMap<String, Arc<RwLock<dyn RoleManager>>>,
     enabled: bool,
     auto_save: bool,
     auto_build_role_links: bool,
@@ -406,7 +406,21 @@ impl Enforcer {
         }
     }
 
+    fn init_rm_map(&mut self) {
+        self.rm_map.entry("g".to_owned()).or_insert_with(|| {
+            Arc::new(RwLock::new(DefaultRoleManager::new(10)))
+        });
+        if let Some(ast_map) = self.model.get_model().get("g") {
+            for ptype in ast_map.keys() {
+                self.rm_map.entry(ptype.to_owned()).or_insert_with(|| {
+                    Arc::new(RwLock::new(DefaultRoleManager::new(10)))
+                });
+            }
+        }
+    }
+
     pub(crate) fn register_g_functions(&mut self) -> Result<()> {
+        self.init_rm_map();
         if let Some(ast_map) = self.model.get_model().get("g") {
             for (fname, ast) in ast_map {
                 register_g_function!(self, fname, ast);
@@ -428,7 +442,6 @@ impl CoreApi for Enforcer {
         let adapter = a.try_into_adapter().await?;
         let fm = FunctionMap::default();
         let eft = Box::new(DefaultEffector);
-        let rm = Arc::new(RwLock::new(DefaultRoleManager::new(10)));
 
         let mut engine = Engine::new_raw();
 
@@ -443,7 +456,7 @@ impl CoreApi for Enforcer {
             adapter,
             fm,
             eft,
-            rm,
+            rm_map: HashMap::new(),
             enabled: true,
             auto_save: true,
             auto_build_role_links: true,
@@ -552,7 +565,7 @@ impl CoreApi for Enforcer {
 
     #[inline]
     fn get_role_manager(&self) -> Arc<RwLock<dyn RoleManager>> {
-        Arc::clone(&self.rm)
+        Arc::clone(&self.rm_map["g"])
     }
 
     #[inline]
@@ -560,7 +573,23 @@ impl CoreApi for Enforcer {
         &mut self,
         rm: Arc<RwLock<dyn RoleManager>>,
     ) -> Result<()> {
-        self.rm = rm;
+        self.set_named_role_manager("g", rm)
+    }
+
+    #[inline]
+    fn get_named_role_manager(
+        &self,
+        ptype: &str,
+    ) -> Option<Arc<RwLock<dyn RoleManager>>> {
+        self.rm_map.get(ptype).map(Arc::clone)
+    }
+
+    fn set_named_role_manager(
+        &mut self,
+        ptype: &str,
+        rm: Arc<RwLock<dyn RoleManager>>,
+    ) -> Result<()> {
+        self.rm_map.insert(ptype.to_owned(), rm);
         if self.auto_build_role_links {
             self.build_role_links()?;
         }
@@ -578,6 +607,7 @@ impl CoreApi for Enforcer {
             default_model.compile_matchers(&self.engine)?;
         }
 
+        self.register_g_functions()?;
         self.load_policy().await?;
         Ok(())
     }
@@ -748,16 +778,17 @@ impl CoreApi for Enforcer {
     }
 
     fn build_role_links(&mut self) -> Result<()> {
-        self.rm.write().clear();
-        self.model.build_role_links(Arc::clone(&self.rm))?;
+        for rm in self.rm_map.values() {
+            rm.write().clear();
+        }
+        self.model.build_role_links(&self.rm_map)?;
 
         Ok(())
     }
 
     #[cfg(feature = "incremental")]
     fn build_incremental_role_links(&mut self, d: EventData) -> Result<()> {
-        self.model
-            .build_incremental_role_links(Arc::clone(&self.rm), d)?;
+        self.model.build_incremental_role_links(&self.rm_map, d)?;
 
         Ok(())
     }
@@ -1494,6 +1525,70 @@ mod tests {
         assert!(!e.enforce(("alice", "domain1", "data2", "write")).unwrap());
         assert!(!e.enforce(("bob", "domain2", "data2", "read")).unwrap());
         assert!(!e.enforce(("bob", "domain2", "data2", "write")).unwrap());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(
+        all(feature = "runtime-async-std", not(target_arch = "wasm32")),
+        async_std::test
+    )]
+    #[cfg_attr(
+        all(feature = "runtime-tokio", not(target_arch = "wasm32")),
+        tokio::test
+    )]
+    async fn test_grouping_role_managers_are_isolated() {
+        use crate::RbacApi;
+
+        let m = DefaultModel::from_str(
+            r#"
+[request_definition]
+r = sub, obj, act
+
+[policy_definition]
+p = sub, obj, act
+
+[role_definition]
+g = _, _
+g2 = _, _
+
+[policy_effect]
+e = some(where (p.eft == allow))
+
+[matchers]
+m = g(r.sub, p.sub) && g2(r.obj, p.obj) && r.act == p.act
+"#,
+        )
+        .await
+        .unwrap();
+        let adapter = StringAdapter::new(
+            r#"
+p, admin, data_group, write
+g, alice, admin
+g2, report1, data_group
+g2, eve, admin
+"#,
+        );
+        let mut e = Enforcer::new(m, adapter).await.unwrap();
+        e.enable_auto_save(false);
+
+        assert!(e.enforce(("alice", "report1", "write")).unwrap());
+        assert!(!e.enforce(("eve", "data_group", "write")).unwrap());
+        assert!(!e.has_role_for_user("eve", "admin", None));
+
+        e.add_named_grouping_policy(
+            "g2",
+            vec!["mallory".to_owned(), "admin".to_owned()],
+        )
+        .await
+        .unwrap();
+
+        assert!(!e.enforce(("mallory", "data_group", "write")).unwrap());
+        assert!(!e.has_role_for_user("mallory", "admin", None));
+        assert!(e
+            .get_named_role_manager("g2")
+            .unwrap()
+            .read()
+            .has_link("mallory", "admin", None));
     }
 
     #[cfg(not(target_arch = "wasm32"))]
