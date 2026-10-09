@@ -77,6 +77,9 @@ fn b_benchmark_cached_basic_model(c: &mut Criterion) {
     });
 }
 
+#[cfg(not(feature = "cached"))]
+fn b_benchmark_cached_basic_model(_c: &mut Criterion) {}
+
 fn b_benchmark_rbac_model(c: &mut Criterion) {
     let e = await_future(Enforcer::new(
         "examples/rbac_model.conf",
@@ -558,6 +561,9 @@ fn b_benchmark_cached_abac_model(c: &mut Criterion) {
     });
 }
 
+#[cfg(not(feature = "cached"))]
+fn b_benchmark_cached_abac_model(_c: &mut Criterion) {}
+
 fn b_benchmark_key_match(c: &mut Criterion) {
     let e = await_future(Enforcer::new(
         "examples/keymatch_model.conf",
@@ -637,6 +643,7 @@ criterion_group!(
     benches,
     b_benchmark_raw,
     b_benchmark_basic_model,
+    b_benchmark_cached_basic_model,
     b_benchmark_rbac_model,
     b_benchmark_role_manager_small,
     b_benchmark_rbac_model_small,
@@ -647,6 +654,7 @@ criterion_group!(
     b_benchmark_rbac_with_resource_roles,
     b_benchmark_rbac_model_with_domains,
     b_benchmark_abac_model,
+    b_benchmark_cached_abac_model,
     b_benchmark_key_match,
     b_benchmark_rbac_with_deny,
     b_benchmark_priority_model,

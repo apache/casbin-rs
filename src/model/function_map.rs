@@ -14,6 +14,9 @@ use rhai::Dynamic;
 
 static MAT_B: Lazy<Regex> = Lazy::new(|| Regex::new(r":[^/]*").unwrap());
 static MAT_P: Lazy<Regex> = Lazy::new(|| Regex::new(r"\{[^/]*\}").unwrap());
+static MAT_COLON: Lazy<Regex> = Lazy::new(|| Regex::new(r":[^/]+").unwrap());
+static MAT_BRACE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\{[^/]+?\}").unwrap());
 
 use std::{borrow::Cow, collections::HashMap};
 
@@ -245,9 +248,8 @@ pub fn key_get2(key1: &str, key2: &str, path_var: &str) -> String {
         key2.into()
     };
 
-    let re = Regex::new(r":[^/]+").unwrap();
-    let keys: Vec<_> = re.find_iter(&key2).collect();
-    let key2 = re.replace_all(&key2, "([^/]+)").to_string();
+    let keys: Vec<_> = MAT_COLON.find_iter(&key2).collect();
+    let key2 = MAT_COLON.replace_all(&key2, "([^/]+)").to_string();
     let key2 = format!("^{}$", key2);
 
     if let Ok(re2) = Regex::new(&key2) {
@@ -288,13 +290,9 @@ pub fn key_get3(key1: &str, key2: &str, path_var: &str) -> String {
         key2.into()
     };
 
-    let re = Regex::new(r"\{[^/]+?\}").unwrap();
-    let keys: Vec<_> = re.find_iter(&key2).collect();
-    let key2 = re.replace_all(&key2, "([^/]+?)").to_string();
-    let key2 = Regex::new(r"\{")
-        .unwrap()
-        .replace_all(&key2, "\\{")
-        .to_string();
+    let keys: Vec<_> = MAT_BRACE.find_iter(&key2).collect();
+    let key2 = MAT_BRACE.replace_all(&key2, "([^/]+?)").to_string();
+    let key2 = key2.replace('{', "\\{");
     let key2 = format!("^{}$", key2);
 
     let re2 = Regex::new(&key2).unwrap();
@@ -320,8 +318,7 @@ pub fn key_match4(key1: &str, key2: &str) -> bool {
     let mut key2 = key2.replace("/*", "/.*");
     let mut tokens = Vec::new();
 
-    let re = Regex::new(r"\{[^/]+?\}").unwrap();
-    key2 = re
+    key2 = MAT_BRACE
         .replace_all(&key2, |caps: &regex::Captures| {
             tokens.push(caps[0][1..caps[0].len() - 1].to_string());
             "([^/]+)".to_string()
@@ -370,9 +367,7 @@ pub fn key_match5(key1: &str, key2: &str) -> bool {
     };
 
     let key2 = key2.replace("/*", "/.*");
-    let key2 = Regex::new(r"(\{[^/]+?\})")
-        .unwrap()
-        .replace_all(&key2, "[^/]+");
+    let key2 = MAT_BRACE.replace_all(&key2, "[^/]+");
 
     regex_match(key1, &format!("^{}$", key2))
 }

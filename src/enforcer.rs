@@ -148,6 +148,7 @@ impl Enforcer {
 
         let policies = p_ast.get_policy();
         let (policy_len, scope_len) = (policies.len(), scope.len());
+        let p_eft_index = p_ast.tokens.iter().position(|x| x == "p_eft");
 
         let mut eft_stream =
             self.eft.new_stream(&e_ast.value, max(policy_len, 1));
@@ -206,7 +207,7 @@ impl Enforcer {
             let eval_result = self
                 .engine
                 .eval_ast_with_scope::<bool>(&mut scope, m_ast_compiled)?;
-            let eft = match p_ast.tokens.iter().position(|x| x == "p_eft") {
+            let eft = match p_eft_index {
                 Some(j) if eval_result => {
                     let p_eft = &pvals[j];
                     if p_eft == "deny" {
@@ -291,6 +292,7 @@ impl Enforcer {
 
         let policies = p_ast.get_policy();
         let (policy_len, scope_len) = (policies.len(), scope.len());
+        let p_eft_index = p_ast.tokens.iter().position(|x| x == "p_eft");
 
         let mut eft_stream =
             self.eft.new_stream(&e_ast.value, max(policy_len, 1));
@@ -354,7 +356,7 @@ impl Enforcer {
             let eval_result = self
                 .engine
                 .eval_ast_with_scope::<bool>(&mut scope, m_ast_compiled)?;
-            let eft = match p_ast.tokens.iter().position(|x| x == "p_eft") {
+            let eft = match p_eft_index {
                 Some(j) if eval_result => {
                     let p_eft = &pvals[j];
                     if p_eft == "deny" {

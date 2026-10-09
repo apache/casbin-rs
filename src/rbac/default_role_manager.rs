@@ -525,25 +525,37 @@ impl RoleManager for DefaultRoleManager {
                 continue;
             };
 
-            let mut bfs = matching_bfs::Bfs::new(
-                graph,
-                role1,
-                self.max_hierarchy_level,
-                self.role_matching_fn.is_some(),
-            );
+            if self.role_matching_fn.is_none() {
+                res = matching_bfs::has_link(
+                    graph,
+                    role1,
+                    name2,
+                    self.max_hierarchy_level,
+                );
+            } else {
+                let mut bfs = matching_bfs::Bfs::new(
+                    graph,
+                    role1,
+                    self.max_hierarchy_level,
+                    true,
+                );
 
-            while let Some(node) = bfs.next(graph) {
-                let role_name = &graph[node];
+                while let Some(node) = bfs.next(graph) {
+                    let role_name = &graph[node];
 
-                if role_name == name2
-                    || self
+                    if self
                         .role_matching_fn
-                        .map(|f| f(role_name, name2))
+                        .map(|f| role_name == name2 || f(role_name, name2))
                         .unwrap_or_default()
-                {
-                    res = true;
-                    break;
+                    {
+                        res = true;
+                        break;
+                    }
                 }
+            }
+
+            if res {
+                break;
             }
         }
 
@@ -704,6 +716,122 @@ mod matching_bfs {
         }
     }
 
+    /// Check reachability within `max_depth` hops. Always returns the same
+    /// answer the legacy [`Bfs`] search would (queue-drain depth semantics
+    /// included), but avoids allocating a graph-sized bitset on the common
+    /// path: when every role reached so far has at most one `Link` child
+    /// (chain-shaped hierarchies), a zero-allocation depth-limited DFS
+    /// provably visits exactly the nodes the legacy BFS would yield, so the
+    /// answer is identical. On any branching role graph — or when the DFS
+    /// edge budget is exhausted — the search falls back to the legacy BFS,
+    /// so behavior never differs from the previous implementation.
+    pub(super) fn has_link(
+        graph: &StableDiGraph<String, EdgeVariant>,
+        start: NodeIndex<u32>,
+        target: &str,
+        max_depth: usize,
+    ) -> bool {
+        const MAX_FAST_DEPTH: usize = 16;
+        // Absolute cap on DFS edge iterations before falling back to the
+        // legacy BFS. The budget is also scaled to the graph size below, so
+        // the fallback cost stays within a small constant factor of the
+        // BFS's O(V + E) even on adversarial graphs (e.g. chain graphs
+        // carrying many `Match` edges).
+        const MAX_DFS_EDGES: usize = 4096;
+
+        if max_depth <= MAX_FAST_DEPTH {
+            let work = graph
+                .node_count()
+                .saturating_add(graph.edge_count())
+                .saturating_mul(2);
+            let mut budget = MAX_DFS_EDGES.min(work);
+            match visit(graph, start, target, 0, max_depth, &mut budget) {
+                Visit::Found => return true,
+                Visit::Missed => return false,
+                // Branching graph or budget exhausted: fall through to the
+                // legacy BFS, which always reproduces the old behavior.
+                Visit::Aborted => {}
+            }
+        }
+
+        let mut bfs = Bfs::new(graph, start, max_depth, false);
+        while let Some(node) = bfs.next(graph) {
+            if graph[node] == target {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Result of one step of the depth-limited DFS in `has_link`.
+    enum Visit {
+        /// `target` was found.
+        Found,
+        /// The search must fall back to the legacy BFS: either a node with
+        /// more than one `Link` child was reached (branching hierarchies
+        /// have different legacy-BFS depth semantics) or the edge budget
+        /// was exhausted.
+        Aborted,
+        /// The subtree was searched without finding `target`.
+        Missed,
+    }
+
+    /// Depth-limited DFS step over `Link` edges. Runs only while every node
+    /// on the way has at most one `Link` child; on the first branching node
+    /// it returns [`Visit::Aborted`] so the caller defers to the legacy BFS.
+    /// `budget` counts edge iterations (including `Match` edges) so a node
+    /// with a huge out-degree aborts just as fast as many small nodes.
+    fn visit(
+        graph: &StableDiGraph<String, EdgeVariant>,
+        node: NodeIndex<u32>,
+        target: &str,
+        depth: usize,
+        max_depth: usize,
+        budget: &mut usize,
+    ) -> Visit {
+        if depth >= max_depth {
+            // The legacy BFS yields nothing at max_depth 0 (its depth check
+            // fires before the first pop), so even the start node is not
+            // examined.
+            return Visit::Missed;
+        }
+        if graph[node] == target {
+            return Visit::Found;
+        }
+        if depth + 1 >= max_depth {
+            return Visit::Missed;
+        }
+
+        let mut link_children = 0usize;
+        for edge in graph.edges_directed(node, petgraph::Direction::Outgoing) {
+            if *budget == 0 {
+                return Visit::Aborted;
+            }
+            *budget -= 1;
+            if !matches!(*edge.weight(), EdgeVariant::Link) {
+                continue;
+            }
+            link_children += 1;
+            if link_children > 1 {
+                return Visit::Aborted;
+            }
+            match visit(
+                graph,
+                edge.target(),
+                target,
+                depth + 1,
+                max_depth,
+                budget,
+            ) {
+                Visit::Found => return Visit::Found,
+                Visit::Aborted => return Visit::Aborted,
+                Visit::Missed => {}
+            }
+        }
+
+        Visit::Missed
+    }
+
     pub(super) fn bfs_iterator(
         graph: &StableDiGraph<String, EdgeVariant>,
         node: NodeIndex<u32>,
@@ -794,6 +922,241 @@ mod matching_bfs {
             assert!(nodes.contains(&qc));
             assert!(nodes.contains(&rand));
             assert!(!nodes.contains(&libc));
+        }
+
+        #[test]
+        fn test_exact_link_handles_cycles() {
+            let mut graph = StableDiGraph::<String, EdgeVariant>::new();
+            let a = graph.add_node("a".into());
+            let b = graph.add_node("b".into());
+            let c = graph.add_node("c".into());
+            let d = graph.add_node("d".into());
+
+            graph.extend_with_edges([
+                (a, b, EdgeVariant::Link),
+                (b, a, EdgeVariant::Link),
+                (b, c, EdgeVariant::Link),
+            ]);
+
+            assert!(has_link(&graph, a, "c", 3));
+            assert!(!has_link(&graph, a, graph[d].as_str(), 3));
+            // b has two Link children (a and c), so the DFS fast path aborts
+            // and the legacy BFS decides: with max_depth 2 its queue-drain
+            // depth semantics does not yield c.
+            assert!(!has_link(&graph, a, "c", 2));
+        }
+
+        #[test]
+        fn test_has_link_aborts_to_bfs_on_branching_graph() {
+            use std::time::Instant;
+
+            // Layered graph: each of the 8 nodes at level L links to all 8 at
+            // level L+1 (shared descendants). The DFS fast path must abort at
+            // the first node (8 Link children) and defer to the legacy BFS; a
+            // DFS without the guard would revisit the shared subtrees
+            // exponentially (8^9 ~ 134M node visits).
+            let mut graph = StableDiGraph::<String, EdgeVariant>::new();
+            let mut level: Vec<Vec<_>> = Vec::new();
+            for l in 0..11 {
+                let mut cur = Vec::new();
+                for i in 0..8 {
+                    cur.push(graph.add_node(format!("l{}-{}", l, i)));
+                }
+                if let Some(prev) = level.last() {
+                    for &p in prev {
+                        for &c in &cur {
+                            graph.add_edge(p, c, EdgeVariant::Link);
+                        }
+                    }
+                }
+                level.push(cur);
+            }
+
+            let t = Instant::now();
+            assert!(!has_link(&graph, level[0][0], "missing", 10));
+            assert!(
+                t.elapsed() < std::time::Duration::from_millis(100),
+                "dense-graph has_link took {:?}",
+                t.elapsed()
+            );
+
+            // A reachable target must still be found through the fallback.
+            assert!(has_link(
+                &graph,
+                level[0][0],
+                graph[level[5][3]].as_str(),
+                10
+            ));
+        }
+
+        #[test]
+        fn test_has_link_falls_back_on_deep_graph() {
+            let mut graph = StableDiGraph::<String, EdgeVariant>::new();
+            let nodes: Vec<_> =
+                (0..20).map(|i| graph.add_node(format!("n{}", i))).collect();
+
+            for pair in nodes.windows(2) {
+                graph.add_edge(pair[0], pair[1], EdgeVariant::Link);
+            }
+
+            // 18 hops > MAX_FAST_DEPTH: the legacy BFS is used.
+            assert!(has_link(&graph, nodes[0], graph[nodes[18]].as_str(), 20));
+            assert!(!has_link(&graph, nodes[0], "missing", 20));
+
+            // Legacy BFS chain semantics at the boundary: reachable iff
+            // distance < max_depth. n20 sits at distance 20.
+            let n20 = graph.add_node("n20".into());
+            graph.add_edge(nodes[19], n20, EdgeVariant::Link);
+            assert!(!has_link(&graph, nodes[0], graph[n20].as_str(), 20));
+            assert!(has_link(&graph, nodes[0], graph[n20].as_str(), 21));
+        }
+
+        #[test]
+        fn test_has_link_chain_matches_legacy_bfs() {
+            // Chain graphs are the case where the zero-allocation DFS fast
+            // path is provably equivalent to the legacy BFS: every node has
+            // a single Link child, so both searches walk the same unique
+            // path. This must hold on both sides of the MAX_FAST_DEPTH gate
+            // (16) and with cycles (the last node links back to the first).
+            let mut graph = StableDiGraph::<String, EdgeVariant>::new();
+            let nodes: Vec<_> =
+                (0..12).map(|i| graph.add_node(format!("n{}", i))).collect();
+            for pair in nodes.windows(2) {
+                graph.add_edge(pair[0], pair[1], EdgeVariant::Link);
+            }
+            graph.add_edge(nodes[11], nodes[0], EdgeVariant::Link);
+
+            for max_depth in 1..=20 {
+                for (k, node) in nodes.iter().enumerate() {
+                    let expected = k < max_depth;
+                    assert_eq!(
+                        has_link(
+                            &graph,
+                            nodes[0],
+                            graph[*node].as_str(),
+                            max_depth
+                        ),
+                        expected,
+                        "max_depth = {}, target = n{}",
+                        max_depth,
+                        k
+                    );
+                }
+            }
+            assert!(!has_link(&graph, nodes[0], "missing", 20));
+        }
+
+        #[test]
+        fn test_has_link_matches_legacy_bfs_differential() {
+            // Differential test: has_link must return the exact same answer
+            // as the legacy Bfs search on every graph. Guards the
+            // zero-behavior-change property of the DFS fast path.
+            fn legacy_has_link(
+                graph: &StableDiGraph<String, EdgeVariant>,
+                start: NodeIndex<u32>,
+                target: &str,
+                max_depth: usize,
+            ) -> bool {
+                let mut bfs = Bfs::new(graph, start, max_depth, false);
+                while let Some(node) = bfs.next(graph) {
+                    if graph[node] == target {
+                        return true;
+                    }
+                }
+                false
+            }
+
+            // xorshift64: no rand dependency, deterministic.
+            let mut state: u64 = 0x243f_6a88_85a3_08d3;
+            let mut next = |n: u64| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                state % n
+            };
+
+            // 1) Chain-like graphs: every node has at most one Link child
+            //    (the fast path's provable-equivalence region), with cycles,
+            //    back edges and Match edges sprinkled in.
+            for _case in 0..20_000 {
+                let n = (1 + next(12)) as usize;
+                let mut graph = StableDiGraph::<String, EdgeVariant>::new();
+                let nodes: Vec<_> =
+                    (0..n).map(|i| graph.add_node(format!("n{}", i))).collect();
+                for i in 0..n {
+                    if next(2) == 0 {
+                        continue;
+                    }
+                    let target_idx = if next(4) == 0 {
+                        i // self loop
+                    } else if i + 1 < n && next(3) != 0 {
+                        i + 1 // forward chain edge
+                    } else {
+                        next(n as u64) as usize // arbitrary back edge
+                    };
+                    graph.add_edge(
+                        nodes[i],
+                        nodes[target_idx],
+                        EdgeVariant::Link,
+                    );
+                    // random Match edges: ignored by both searches
+                    if next(2) == 0 {
+                        graph.add_edge(
+                            nodes[i],
+                            nodes[next(n as u64) as usize],
+                            EdgeVariant::Match,
+                        );
+                    }
+                }
+                let max_depth = next(21) as usize;
+                let target = if next(2) == 0 {
+                    graph[nodes[next(n as u64) as usize]].clone()
+                } else {
+                    "missing".to_string()
+                };
+                assert_eq!(
+                    has_link(&graph, nodes[0], &target, max_depth),
+                    legacy_has_link(&graph, nodes[0], &target, max_depth),
+                    "chain-like graph, n = {}, max_depth = {}",
+                    n,
+                    max_depth
+                );
+            }
+
+            // 2) Fully random graphs: most abort to the legacy BFS.
+            for _case in 0..20_000 {
+                let n = (1 + next(12)) as usize;
+                let mut graph = StableDiGraph::<String, EdgeVariant>::new();
+                let nodes: Vec<_> =
+                    (0..n).map(|i| graph.add_node(format!("n{}", i))).collect();
+                for i in 0..n {
+                    for _ in 0..next(4) {
+                        let weight = if next(3) == 0 {
+                            EdgeVariant::Match
+                        } else {
+                            EdgeVariant::Link
+                        };
+                        graph.add_edge(
+                            nodes[i],
+                            nodes[next(n as u64) as usize],
+                            weight,
+                        );
+                    }
+                }
+                let max_depth = next(21) as usize;
+                let target = if next(2) == 0 {
+                    graph[nodes[next(n as u64) as usize]].clone()
+                } else {
+                    "missing".to_string()
+                };
+                assert_eq!(
+                    has_link(&graph, nodes[0], &target, max_depth),
+                    legacy_has_link(&graph, nodes[0], &target, max_depth),
+                    "random graph, n = {}, max_depth = {}",
+                    n,
+                    max_depth
+                );
+            }
         }
     }
 }
