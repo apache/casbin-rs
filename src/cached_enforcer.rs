@@ -29,7 +29,11 @@ use async_trait::async_trait;
 use parking_lot::RwLock;
 use rhai::Dynamic;
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{hash_map::DefaultHasher, HashMap},
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 type EventCallback = fn(&mut CachedEnforcer, EventData);
 
@@ -58,11 +62,21 @@ impl EventEmitter<Event> for CachedEnforcer {
 }
 
 impl CachedEnforcer {
+    #[inline]
+    fn invalidate_cache(&self) {
+        self.cache.clear();
+    }
+
     pub(crate) fn private_enforce(
         &self,
         rvals: &[Dynamic],
         cache_key: u64,
     ) -> Result<(bool, bool, Option<Vec<usize>>)> {
+        if !self.enforcer.is_enabled() {
+            let (authorized, indices) = self.enforcer.private_enforce(rvals)?;
+            return Ok((authorized, false, indices));
+        }
+
         Ok(if let Some(authorized) = self.cache.get(&cache_key) {
             (authorized, true, None)
         } else {
@@ -78,6 +92,19 @@ impl CachedEnforcer {
         rvals: &[Dynamic],
         cache_key: u64,
     ) -> Result<(bool, bool, Option<Vec<usize>>)> {
+        if !self.enforcer.is_enabled() {
+            let (authorized, indices) =
+                self.enforcer.private_enforce_with_context(ctx, rvals)?;
+            return Ok((authorized, false, indices));
+        }
+
+        let cache_key = {
+            let mut hasher = DefaultHasher::new();
+            cache_key.hash(&mut hasher);
+            ctx.get_cache_key().hash(&mut hasher);
+            hasher.finish()
+        };
+
         Ok(if let Some(authorized) = self.cache.get(&cache_key) {
             (authorized, true, None)
         } else {
@@ -125,6 +152,7 @@ impl CoreApi for CachedEnforcer {
     #[inline]
     fn add_function(&mut self, fname: &str, f: OperatorFunction) {
         self.enforcer.add_function(fname, f);
+        self.invalidate_cache();
     }
 
     #[inline]
@@ -134,6 +162,7 @@ impl CoreApi for CachedEnforcer {
 
     #[inline]
     fn get_mut_model(&mut self) -> &mut dyn Model {
+        self.invalidate_cache();
         self.enforcer.get_mut_model()
     }
 
@@ -174,7 +203,9 @@ impl CoreApi for CachedEnforcer {
         &mut self,
         rm: Arc<RwLock<dyn RoleManager>>,
     ) -> Result<()> {
-        self.enforcer.set_role_manager(rm)
+        let res = self.enforcer.set_role_manager(rm);
+        self.invalidate_cache();
+        res
     }
 
     #[inline]
@@ -191,17 +222,23 @@ impl CoreApi for CachedEnforcer {
         ptype: &str,
         rm: Arc<RwLock<dyn RoleManager>>,
     ) -> Result<()> {
-        self.enforcer.set_named_role_manager(ptype, rm)
+        let res = self.enforcer.set_named_role_manager(ptype, rm);
+        self.invalidate_cache();
+        res
     }
 
     #[inline]
     async fn set_model<M: TryIntoModel>(&mut self, m: M) -> Result<()> {
-        self.enforcer.set_model(m).await
+        let res = self.enforcer.set_model(m).await;
+        self.invalidate_cache();
+        res
     }
 
     #[inline]
     async fn set_adapter<A: TryIntoAdapter>(&mut self, a: A) -> Result<()> {
-        self.enforcer.set_adapter(a).await
+        let res = self.enforcer.set_adapter(a).await;
+        self.invalidate_cache();
+        res
     }
 
     #[cfg(feature = "logging")]
@@ -219,6 +256,7 @@ impl CoreApi for CachedEnforcer {
     #[inline]
     fn set_effector(&mut self, e: Box<dyn Effector>) {
         self.enforcer.set_effector(e);
+        self.invalidate_cache();
     }
 
     fn enforce<ARGS: EnforceArgs>(&self, rvals: ARGS) -> Result<bool> {
@@ -326,23 +364,31 @@ impl CoreApi for CachedEnforcer {
 
     #[inline]
     fn build_role_links(&mut self) -> Result<()> {
-        self.enforcer.build_role_links()
+        let res = self.enforcer.build_role_links();
+        self.invalidate_cache();
+        res
     }
 
     #[cfg(feature = "incremental")]
     #[inline]
     fn build_incremental_role_links(&mut self, d: EventData) -> Result<()> {
-        self.enforcer.build_incremental_role_links(d)
+        let res = self.enforcer.build_incremental_role_links(d);
+        self.invalidate_cache();
+        res
     }
 
     #[inline]
     async fn load_policy(&mut self) -> Result<()> {
-        self.enforcer.load_policy().await
+        let res = self.enforcer.load_policy().await;
+        self.invalidate_cache();
+        res
     }
 
     #[inline]
     async fn load_filtered_policy<'a>(&mut self, f: Filter<'a>) -> Result<()> {
-        self.enforcer.load_filtered_policy(f).await
+        let res = self.enforcer.load_filtered_policy(f).await;
+        self.invalidate_cache();
+        res
     }
 
     #[inline]
@@ -362,7 +408,9 @@ impl CoreApi for CachedEnforcer {
 
     #[inline]
     async fn clear_policy(&mut self) -> Result<()> {
-        self.enforcer.clear_policy().await
+        let res = self.enforcer.clear_policy().await;
+        self.invalidate_cache();
+        res
     }
 
     #[cfg(feature = "logging")]
@@ -374,6 +422,7 @@ impl CoreApi for CachedEnforcer {
     #[inline]
     fn enable_enforce(&mut self, enabled: bool) {
         self.enforcer.enable_enforce(enabled);
+        self.invalidate_cache();
     }
 
     #[inline]
@@ -437,5 +486,91 @@ mod tests {
     fn test_send_sync() {
         assert!(is_send::<CachedEnforcer>());
         assert!(is_sync::<CachedEnforcer>());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(
+        all(feature = "runtime-async-std", not(target_arch = "wasm32")),
+        async_std::test
+    )]
+    #[cfg_attr(
+        all(feature = "runtime-tokio", not(target_arch = "wasm32")),
+        tokio::test
+    )]
+    async fn test_cache_invalidated_on_lifecycle_changes() {
+        use crate::{FileAdapter, MemoryAdapter};
+
+        let m = "examples/basic_model.conf";
+        let p = "examples/basic_policy.csv";
+
+        let mut e = CachedEnforcer::new(m, p).await.unwrap();
+        assert!(e.enforce(("alice", "data1", "read")).unwrap());
+        e.enable_auto_save(false);
+        e.clear_policy().await.unwrap();
+        assert!(!e.enforce(("alice", "data1", "read")).unwrap());
+
+        let mut e = CachedEnforcer::new(m, p).await.unwrap();
+        assert!(e.enforce(("alice", "data1", "read")).unwrap());
+        e.set_adapter(MemoryAdapter::default()).await.unwrap();
+        assert!(!e.enforce(("alice", "data1", "read")).unwrap());
+
+        let mut e = CachedEnforcer::new(m, p).await.unwrap();
+        assert!(e.enforce(("alice", "data1", "read")).unwrap());
+        e.get_mut_model().clear_policy();
+        assert!(!e.enforce(("alice", "data1", "read")).unwrap());
+        e.set_adapter(FileAdapter::new(p)).await.unwrap();
+        assert!(e.enforce(("alice", "data1", "read")).unwrap());
+
+        let mut e = CachedEnforcer::new(m, p).await.unwrap();
+        e.enable_enforce(false);
+        assert!(e.enforce(("bob", "data1", "read")).unwrap());
+        e.enable_enforce(true);
+        assert!(!e.enforce(("bob", "data1", "read")).unwrap());
+        e.enable_enforce(false);
+        assert!(e.enforce(("bob", "data1", "read")).unwrap());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(
+        all(feature = "runtime-async-std", not(target_arch = "wasm32")),
+        async_std::test
+    )]
+    #[cfg_attr(
+        all(feature = "runtime-tokio", not(target_arch = "wasm32")),
+        tokio::test
+    )]
+    async fn test_cache_key_includes_enforce_context() {
+        use crate::{DefaultModel, EnforceContext, StringAdapter};
+
+        let m = DefaultModel::from_str(
+            r#"
+[request_definition]
+r = sub, act
+r2 = sub, act
+
+[policy_definition]
+p = sub, act
+p2 = sub, act
+
+[policy_effect]
+e = some(where (p.eft == allow))
+e2 = some(where (p.eft == allow))
+
+[matchers]
+m = r.sub == p.sub && r.act == p.act
+m2 = r2.sub == p2.sub && r2.act == p2.act
+"#,
+        )
+        .await
+        .unwrap();
+        let a = StringAdapter::new("p, alice, read");
+
+        let e = CachedEnforcer::new(m, a).await.unwrap();
+        assert!(e
+            .enforce_with_context(EnforceContext::new(""), ("alice", "read"))
+            .unwrap());
+        assert!(!e
+            .enforce_with_context(EnforceContext::new("2"), ("alice", "read"))
+            .unwrap());
     }
 }
