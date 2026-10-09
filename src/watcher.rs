@@ -11,6 +11,19 @@ mod tests {
     use crate::prelude::*;
     use std::sync::{Arc, Mutex};
 
+    // save_policy() rewrites the policy file, so give each test its own copy
+    // instead of truncating the fixture other tests are reading concurrently.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn temp_policy_file(name: &str) -> FileAdapter<std::path::PathBuf> {
+        let path = std::env::temp_dir().join(format!(
+            "casbin_rs_{}_{}.csv",
+            name,
+            std::process::id()
+        ));
+        std::fs::copy("examples/rbac_policy.csv", &path).unwrap();
+        FileAdapter::new(path)
+    }
+
     // Sample watcher implementation for testing
     struct SampleWatcher {
         callback: Option<Box<dyn FnMut(String) + Send + Sync>>,
@@ -49,7 +62,7 @@ mod tests {
     async fn test_set_watcher() {
         let mut e = Enforcer::new(
             "examples/rbac_model.conf",
-            "examples/rbac_policy.csv",
+            temp_policy_file("set_watcher"),
         )
         .await
         .unwrap();
@@ -211,7 +224,7 @@ mod tests {
     async fn test_set_watcher_ex() {
         let mut e = Enforcer::new(
             "examples/rbac_model.conf",
-            "examples/rbac_policy.csv",
+            temp_policy_file("set_watcher_ex"),
         )
         .await
         .unwrap();
