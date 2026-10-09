@@ -20,6 +20,7 @@ const DEFAULT_DOMAIN: &str = "DEFAULT";
 pub struct DefaultRoleManager {
     all_domains: HashMap<String, StableDiGraph<String, EdgeVariant>>,
     all_domains_indices: HashMap<String, HashMap<String, NodeIndex<u32>>>,
+    explicit_links: HashMap<String, HashSet<(String, String)>>,
     #[cfg(feature = "cached")]
     cache: DefaultCache<u64, bool>,
     max_hierarchy_level: usize,
@@ -38,6 +39,7 @@ impl DefaultRoleManager {
         DefaultRoleManager {
             all_domains: HashMap::new(),
             all_domains_indices: HashMap::new(),
+            explicit_links: HashMap::new(),
             max_hierarchy_level,
             #[cfg(feature = "cached")]
             cache: DefaultCache::new(50),
@@ -250,6 +252,57 @@ impl DefaultRoleManager {
         self.cache.clear();
     }
 
+    // a link in `domain` is still justified if it was added directly to
+    // `domain` or to a pattern domain that matches `domain`
+    fn link_is_justified(
+        &self,
+        name1: &str,
+        name2: &str,
+        domain: &str,
+    ) -> bool {
+        let key = (name1.to_owned(), name2.to_owned());
+        self.explicit_links.iter().any(|(d, links)| {
+            links.contains(&key)
+                && (d == domain
+                    || self.domain_matching_fn.is_some_and(|f| f(domain, d)))
+        })
+    }
+
+    fn remove_link_edge(
+        &mut self,
+        name1: &str,
+        name2: &str,
+        domain: &str,
+    ) -> bool {
+        use petgraph::visit::EdgeRef;
+
+        let (graph, indices) = match (
+            self.all_domains.get_mut(domain),
+            self.all_domains_indices.get(domain),
+        ) {
+            (Some(graph), Some(indices)) => (graph, indices),
+            _ => return false,
+        };
+
+        let (role1, role2) = match (indices.get(name1), indices.get(name2)) {
+            (Some(role1), Some(role2)) => (*role1, *role2),
+            _ => return false,
+        };
+
+        let edge = graph
+            .edges_connecting(role1, role2)
+            .find(|e| matches!(*e.weight(), EdgeVariant::Link))
+            .map(|e| e.id());
+
+        match edge {
+            Some(edge) => {
+                graph.remove_edge(edge);
+                true
+            }
+            None => false,
+        }
+    }
+
     fn matched_domains(&self, domain: Option<&str>) -> Vec<String> {
         let domain = domain.unwrap_or(DEFAULT_DOMAIN);
         if let Some(domain_matching_fn) = self.domain_matching_fn {
@@ -327,6 +380,7 @@ impl RoleManager for DefaultRoleManager {
     fn clear(&mut self) {
         self.all_domains_indices.clear();
         self.all_domains.clear();
+        self.explicit_links.clear();
         #[cfg(feature = "cached")]
         self.cache.clear();
     }
@@ -335,6 +389,11 @@ impl RoleManager for DefaultRoleManager {
         if name1 == name2 {
             return;
         }
+
+        self.explicit_links
+            .entry(domain.unwrap_or(DEFAULT_DOMAIN).into())
+            .or_default()
+            .insert((name1.into(), name2.into()));
 
         let role1 = self.get_or_create_role(name1, domain);
         let role2 = self.get_or_create_role(name2, domain);
@@ -391,17 +450,27 @@ impl RoleManager for DefaultRoleManager {
             );
         }
 
-        let role1 = self.get_or_create_role(name1, domain);
-        let role2 = self.get_or_create_role(name2, domain);
+        let domain_name = domain.unwrap_or(DEFAULT_DOMAIN);
 
-        let graph = self
-            .all_domains
-            .get_mut(domain.unwrap_or(DEFAULT_DOMAIN))
-            .unwrap();
+        if let Some(links) = self.explicit_links.get_mut(domain_name) {
+            links.remove(&(name1.to_owned(), name2.to_owned()));
+        }
 
-        if let Some(edge_index) = graph.find_edge(role1, role2) {
-            graph.remove_edge(edge_index).unwrap();
+        // links added to a pattern domain were copied into every matching
+        // domain, so remove those copies too unless something still grants them
+        let mut domains = vec![domain_name.to_owned()];
+        if domain.is_some() {
+            domains.extend(self.affected_domain_names(domain_name));
+        }
 
+        let mut removed = false;
+        for d in domains {
+            if !self.link_is_justified(name1, name2, &d) {
+                removed |= self.remove_link_edge(name1, name2, &d);
+            }
+        }
+
+        if removed {
             #[cfg(feature = "cached")]
             self.cache.clear();
         }
@@ -970,5 +1039,35 @@ mod tests {
 
         rm.add_link("super_admin", "admin", Some("domain1"));
         assert!(rm.has_link("super_admin", "admin", Some("domain1")));
+    }
+
+    #[test]
+    fn test_delete_pattern_domain_link() {
+        use crate::model::key_match;
+        let mut rm = DefaultRoleManager::new(10);
+        rm.matching_fn(None, Some(key_match));
+
+        rm.add_link("alice", "admin", Some("*"));
+        rm.add_link("bob", "admin", Some("domain2"));
+        rm.add_link("admin", "super_admin", Some("domain2"));
+        assert!(rm.has_link("alice", "admin", Some("domain2")));
+        assert!(rm.has_link("alice", "super_admin", Some("domain2")));
+
+        rm.delete_link("alice", "admin", Some("*")).unwrap();
+        assert!(!rm.has_link("alice", "admin", Some("*")));
+        assert!(!rm.has_link("alice", "admin", Some("domain2")));
+        assert!(!rm.has_link("alice", "super_admin", Some("domain2")));
+        assert!(rm.has_link("bob", "super_admin", Some("domain2")));
+
+        rm.add_link("carol", "admin", Some("*"));
+        rm.add_link("carol", "admin", Some("domain2"));
+        rm.delete_link("carol", "admin", Some("*")).unwrap();
+        assert!(rm.has_link("carol", "admin", Some("domain2")));
+        assert!(!rm.has_link("carol", "admin", Some("domain3")));
+
+        rm.add_link("dave", "admin", Some("*"));
+        rm.add_link("dave", "admin", Some("domain2"));
+        rm.delete_link("dave", "admin", Some("domain2")).unwrap();
+        assert!(rm.has_link("dave", "super_admin", Some("domain2")));
     }
 }
