@@ -118,7 +118,10 @@ where
                 self.emit(Event::ClearCache, EventData::ClearCache);
             }
         }
-        if sec != "g" || !self.has_auto_build_role_links_enabled() {
+        if sec != "g"
+            || !rule_added
+            || !self.has_auto_build_role_links_enabled()
+        {
             return Ok(rule_added);
         }
         #[cfg(not(feature = "incremental"))]
@@ -202,7 +205,10 @@ where
                 self.emit(Event::ClearCache, EventData::ClearCache);
             }
         }
-        if sec != "g" || !self.has_auto_build_role_links_enabled() {
+        if sec != "g"
+            || !rules_added
+            || !self.has_auto_build_role_links_enabled()
+        {
             return Ok(rules_added);
         }
         #[cfg(not(feature = "incremental"))]
@@ -286,7 +292,10 @@ where
                 self.emit(Event::ClearCache, EventData::ClearCache);
             }
         }
-        if sec != "g" || !self.has_auto_build_role_links_enabled() {
+        if sec != "g"
+            || !rule_removed
+            || !self.has_auto_build_role_links_enabled()
+        {
             return Ok(rule_removed);
         }
         #[cfg(not(feature = "incremental"))]
@@ -370,7 +379,10 @@ where
                 self.emit(Event::ClearCache, EventData::ClearCache);
             }
         }
-        if sec != "g" || !self.has_auto_build_role_links_enabled() {
+        if sec != "g"
+            || !rules_removed
+            || !self.has_auto_build_role_links_enabled()
+        {
             return Ok(rules_removed);
         }
         #[cfg(not(feature = "incremental"))]
@@ -439,7 +451,10 @@ where
                 self.emit(Event::ClearCache, EventData::ClearCache);
             }
         }
-        if sec != "g" || !self.has_auto_build_role_links_enabled() {
+        if sec != "g"
+            || !rules_removed
+            || !self.has_auto_build_role_links_enabled()
+        {
             return Ok((rules_removed, rules));
         }
         #[cfg(not(feature = "incremental"))]

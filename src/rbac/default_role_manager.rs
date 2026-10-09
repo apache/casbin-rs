@@ -379,6 +379,10 @@ impl RoleManager for DefaultRoleManager {
         name2: &str,
         domain: Option<&str>,
     ) -> Result<()> {
+        if name1 == name2 {
+            return Ok(());
+        }
+
         if !self.domain_has_role(name1, domain)
             || !self.domain_has_role(name2, domain)
         {
