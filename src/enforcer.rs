@@ -168,13 +168,16 @@ impl Enforcer {
         };
 
         if policy_len == 0 {
+            // No policy rows: bind policy tokens to unit so that only the
+            // parts of the matcher that do not depend on a policy can allow.
             for token in p_ast.tokens.iter() {
-                scope.push_constant(token, String::new());
+                scope.push_constant(token, ());
             }
 
             let eval_result = self
                 .engine
-                .eval_ast_with_scope::<bool>(&mut scope, m_ast_compiled)?;
+                .eval_ast_with_scope::<bool>(&mut scope, m_ast_compiled)
+                .unwrap_or(false);
             let eft = if eval_result {
                 EffectKind::Allow
             } else {
@@ -313,13 +316,16 @@ impl Enforcer {
         };
 
         if policy_len == 0 {
+            // No policy rows: bind policy tokens to unit so that only the
+            // parts of the matcher that do not depend on a policy can allow.
             for token in p_ast.tokens.iter() {
-                scope.push_constant(token, String::new());
+                scope.push_constant(token, ());
             }
 
             let eval_result = self
                 .engine
-                .eval_ast_with_scope::<bool>(&mut scope, m_ast_compiled)?;
+                .eval_ast_with_scope::<bool>(&mut scope, m_ast_compiled)
+                .unwrap_or(false);
             let eft = if eval_result {
                 EffectKind::Allow
             } else {

@@ -77,30 +77,27 @@ impl Adapter for StringAdapter {
         m: &mut dyn Model,
         f: Filter<'a>,
     ) -> Result<()> {
+        self.is_filtered = false;
         let policies = self.policy.split("\n");
         for line in policies {
             if let Some(tokens) = parse_csv_line(line) {
-                let sec = &tokens[0];
-                let ptype = &tokens[1];
-                let rule = tokens[1..].to_vec().clone();
-                let mut is_filtered = false;
+                let ptype = &tokens[0];
+                let sec = match ptype.chars().next() {
+                    Some(c) => c.to_string(),
+                    None => continue,
+                };
+                let rule = tokens[1..].to_vec();
+                let filter = match sec.as_str() {
+                    "p" => &f.p,
+                    "g" => &f.g,
+                    _ => continue,
+                };
+                let is_filtered = filter.iter().enumerate().any(|(i, r)| {
+                    !r.is_empty() && rule.get(i).map(String::as_str) != Some(*r)
+                });
 
-                if sec == "p" {
-                    for (i, r) in f.p.iter().enumerate() {
-                        if !r.is_empty() && r != &rule[i + 1] {
-                            is_filtered = true;
-                        }
-                    }
-                }
-                if sec == "g" {
-                    for (i, r) in f.g.iter().enumerate() {
-                        if !r.is_empty() && r != &rule[i + 1] {
-                            is_filtered = true;
-                        }
-                    }
-                }
                 if !is_filtered {
-                    if let Some(ast_map) = m.get_mut_model().get_mut(sec) {
+                    if let Some(ast_map) = m.get_mut_model().get_mut(&sec) {
                         if let Some(ast) = ast_map.get_mut(ptype) {
                             ast.get_mut_policy().insert(rule);
                         }
@@ -345,5 +342,38 @@ mod tests {
             .unwrap();
 
         assert!(adapter.is_filtered());
+    }
+
+    #[cfg_attr(
+        all(not(target_arch = "wasm32"), feature = "runtime-async-std"),
+        async_std::test
+    )]
+    #[cfg_attr(
+        all(not(target_arch = "wasm32"), feature = "runtime-tokio"),
+        tokio::test
+    )]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    async fn test_load_filtered_policy() {
+        let policy = "p, alice, data1, read\np, bob, data2, write";
+        let mut adapter = StringAdapter::new(policy);
+        let mut model = DefaultModel::from_str(include_str!(
+            "../../examples/rbac_model.conf"
+        ))
+        .await
+        .unwrap();
+
+        let filter = Filter {
+            p: vec!["alice"],
+            g: vec![],
+        };
+
+        adapter
+            .load_filtered_policy(&mut model, filter)
+            .await
+            .unwrap();
+        let enforcer = Enforcer::new(model, adapter).await.unwrap();
+
+        assert!(enforcer.enforce(("alice", "data1", "read")).unwrap());
+        assert!(!enforcer.enforce(("bob", "data2", "write")).unwrap());
     }
 }

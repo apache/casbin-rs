@@ -563,6 +563,75 @@ mod tests {
         all(feature = "runtime-tokio", not(target_arch = "wasm32")),
         tokio::test
     )]
+    async fn test_no_policy_does_not_match_empty_values() {
+        let m = DefaultModel::from_str(
+            r#"
+[request_definition]
+r = sub, obj, act
+
+[policy_definition]
+p = sub, obj, act
+
+[policy_effect]
+e = some(where (p.eft == allow))
+
+[matchers]
+m = r.sub == p.sub && r.obj == p.obj && regexMatch(r.act, p.act)
+"#,
+        )
+        .await
+        .unwrap();
+
+        let adapter = MemoryAdapter::default();
+        let e = Enforcer::new(m, adapter).await.unwrap();
+
+        assert!(!e.enforce(("", "", "")).unwrap());
+        assert!(!e.enforce(("", "", "DELETE")).unwrap());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(
+        all(feature = "runtime-async-std", not(target_arch = "wasm32")),
+        async_std::test
+    )]
+    #[cfg_attr(
+        all(feature = "runtime-tokio", not(target_arch = "wasm32")),
+        tokio::test
+    )]
+    async fn test_no_policy_function_on_policy_value() {
+        let m = DefaultModel::from_str(
+            r#"
+[request_definition]
+r = sub, obj, act
+
+[policy_definition]
+p = sub, obj, act
+
+[policy_effect]
+e = some(where (p.eft == allow))
+
+[matchers]
+m = regexMatch(r.act, p.act) && r.sub == p.sub && r.obj == p.obj
+"#,
+        )
+        .await
+        .unwrap();
+
+        let adapter = MemoryAdapter::default();
+        let e = Enforcer::new(m, adapter).await.unwrap();
+
+        assert!(!e.enforce(("", "", "DELETE")).unwrap());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(
+        all(feature = "runtime-async-std", not(target_arch = "wasm32")),
+        async_std::test
+    )]
+    #[cfg_attr(
+        all(feature = "runtime-tokio", not(target_arch = "wasm32")),
+        tokio::test
+    )]
     async fn test_basic_model_with_root() {
         let m = DefaultModel::from_file("examples/basic_with_root_model.conf")
             .await
