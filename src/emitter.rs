@@ -103,7 +103,7 @@ pub(crate) fn notify_logger_and_watcher<T: CoreApi>(e: &mut T, d: EventData) {
 
 #[cfg(feature = "cached")]
 #[allow(unused_variables)]
-pub(crate) fn clear_cache<T: CoreApi + CachedApi<u64, bool>>(
+pub(crate) fn clear_cache<T: CoreApi + CachedApi<String, bool>>(
     ce: &mut T,
     d: EventData,
 ) {

@@ -27,19 +27,15 @@ use crate::{error::ModelError, get_or_err};
 
 use async_trait::async_trait;
 use parking_lot::RwLock;
-use rhai::Dynamic;
+use rhai::{Array, Blob, Dynamic, ImmutableString, Map};
 
-use std::{
-    collections::{hash_map::DefaultHasher, HashMap},
-    hash::{Hash, Hasher},
-    sync::Arc,
-};
+use std::{collections::HashMap, fmt::Write, sync::Arc};
 
 type EventCallback = fn(&mut CachedEnforcer, EventData);
 
 pub struct CachedEnforcer {
     enforcer: Enforcer,
-    cache: Box<dyn Cache<u64, bool>>,
+    cache: Box<dyn Cache<String, bool>>,
     events: HashMap<Event, Vec<EventCallback>>,
 }
 
@@ -61,36 +57,100 @@ impl EventEmitter<Event> for CachedEnforcer {
     }
 }
 
+// Encode the request without loss, so that two different requests can never
+// share a cache entry. Values that cannot be encoded are not cached.
+fn cache_key(prefix: &str, rvals: &[Dynamic]) -> Option<String> {
+    let mut key = String::new();
+    write_str(&mut key, prefix);
+    write_values(&mut key, rvals)?;
+    Some(key)
+}
+
+fn write_str(key: &mut String, s: &str) {
+    let _ = write!(key, "s{}:{}", s.len(), s);
+}
+
+fn write_values(key: &mut String, values: &[Dynamic]) -> Option<()> {
+    let _ = write!(key, "a{}:", values.len());
+    values.iter().try_for_each(|v| write_value(key, v))
+}
+
+fn write_value(key: &mut String, value: &Dynamic) -> Option<()> {
+    if value.is_unit() {
+        key.push('u');
+    } else if let Ok(b) = value.as_bool() {
+        key.push(if b { 't' } else { 'f' });
+    } else if let Ok(i) = value.as_int() {
+        let _ = write!(key, "i{};", i);
+    } else if let Ok(c) = value.as_char() {
+        let _ = write!(key, "c{};", c as u32);
+    } else if let Some(s) = value.read_lock::<ImmutableString>() {
+        write_str(key, &s);
+    } else if let Some(a) = value.read_lock::<Array>() {
+        write_values(key, &a)?;
+    } else if let Some(m) = value.read_lock::<Map>() {
+        let _ = write!(key, "m{}:", m.len());
+        for (k, v) in m.iter() {
+            write_str(key, k);
+            write_value(key, v)?;
+        }
+    } else {
+        let b = value.read_lock::<Blob>()?;
+        let _ = write!(key, "x{}:", b.len());
+        b.iter().for_each(|byte| {
+            let _ = write!(key, "{:02x}", byte);
+        });
+    }
+
+    Some(())
+}
+
 impl CachedEnforcer {
     #[inline]
     fn invalidate_cache(&self) {
         self.cache.clear();
     }
 
+    fn cached_enforce(
+        &self,
+        cache_key: Option<String>,
+        enforce: impl FnOnce() -> Result<(bool, Option<Vec<usize>>)>,
+    ) -> Result<(bool, bool, Option<Vec<usize>>)> {
+        let cache_key = match cache_key {
+            Some(cache_key) => cache_key,
+            None => {
+                let (authorized, indices) = enforce()?;
+                return Ok((authorized, false, indices));
+            }
+        };
+
+        Ok(if let Some(authorized) = self.cache.get(&cache_key) {
+            (authorized, true, None)
+        } else {
+            let (authorized, indices) = enforce()?;
+            self.cache.set(cache_key, authorized);
+            (authorized, false, indices)
+        })
+    }
+
     pub(crate) fn private_enforce(
         &self,
         rvals: &[Dynamic],
-        cache_key: u64,
     ) -> Result<(bool, bool, Option<Vec<usize>>)> {
         if !self.enforcer.is_enabled() {
             let (authorized, indices) = self.enforcer.private_enforce(rvals)?;
             return Ok((authorized, false, indices));
         }
 
-        Ok(if let Some(authorized) = self.cache.get(&cache_key) {
-            (authorized, true, None)
-        } else {
-            let (authorized, indices) =
-                self.enforcer.private_enforce(&rvals)?;
-            self.cache.set(cache_key, authorized);
-            (authorized, false, indices)
+        self.cached_enforce(cache_key("", rvals), || {
+            self.enforcer.private_enforce(rvals)
         })
     }
+
     pub(crate) fn private_enforce_with_context(
         &self,
         ctx: EnforceContext,
         rvals: &[Dynamic],
-        cache_key: u64,
     ) -> Result<(bool, bool, Option<Vec<usize>>)> {
         if !self.enforcer.is_enabled() {
             let (authorized, indices) =
@@ -98,20 +158,8 @@ impl CachedEnforcer {
             return Ok((authorized, false, indices));
         }
 
-        let cache_key = {
-            let mut hasher = DefaultHasher::new();
-            cache_key.hash(&mut hasher);
-            ctx.get_cache_key().hash(&mut hasher);
-            hasher.finish()
-        };
-
-        Ok(if let Some(authorized) = self.cache.get(&cache_key) {
-            (authorized, true, None)
-        } else {
-            let (authorized, indices) =
-                self.enforcer.private_enforce_with_context(ctx, &rvals)?;
-            self.cache.set(cache_key, authorized);
-            (authorized, false, indices)
+        self.cached_enforce(cache_key(&ctx.get_cache_key(), rvals), || {
+            self.enforcer.private_enforce_with_context(ctx, rvals)
         })
     }
 }
@@ -260,11 +308,9 @@ impl CoreApi for CachedEnforcer {
     }
 
     fn enforce<ARGS: EnforceArgs>(&self, rvals: ARGS) -> Result<bool> {
-        let cache_key = rvals.cache_key();
         let rvals = rvals.try_into_vec()?;
         #[allow(unused_variables)]
-        let (authorized, cached, indices) =
-            self.private_enforce(&rvals, cache_key)?;
+        let (authorized, cached, indices) = self.private_enforce(&rvals)?;
 
         #[cfg(feature = "logging")]
         {
@@ -298,11 +344,10 @@ impl CoreApi for CachedEnforcer {
         ctx: EnforceContext,
         rvals: ARGS,
     ) -> Result<bool> {
-        let cache_key = rvals.cache_key();
         let rvals = rvals.try_into_vec()?;
         #[allow(unused_variables)]
         let (authorized, cached, indices) =
-            self.private_enforce_with_context(ctx, &rvals, cache_key)?;
+            self.private_enforce_with_context(ctx, &rvals)?;
 
         #[cfg(feature = "logging")]
         {
@@ -341,11 +386,9 @@ impl CoreApi for CachedEnforcer {
         &self,
         rvals: ARGS,
     ) -> Result<(bool, Vec<Vec<String>>)> {
-        let cache_key = rvals.cache_key();
         let rvals = rvals.try_into_vec()?;
         #[allow(unused_variables)]
-        let (authorized, cached, indices) =
-            self.private_enforce(&rvals, cache_key)?;
+        let (authorized, cached, indices) = self.private_enforce(&rvals)?;
 
         let rules = match indices {
             Some(indices) => {
@@ -460,12 +503,12 @@ impl CoreApi for CachedEnforcer {
     }
 }
 
-impl CachedApi<u64, bool> for CachedEnforcer {
-    fn get_mut_cache(&mut self) -> &mut dyn Cache<u64, bool> {
+impl CachedApi<String, bool> for CachedEnforcer {
+    fn get_mut_cache(&mut self) -> &mut dyn Cache<String, bool> {
         &mut *self.cache
     }
 
-    fn set_cache(&mut self, cache: Box<dyn Cache<u64, bool>>) {
+    fn set_cache(&mut self, cache: Box<dyn Cache<String, bool>>) {
         self.cache = cache;
     }
 }
@@ -480,6 +523,20 @@ mod tests {
 
     fn is_sync<T: Sync>() -> bool {
         true
+    }
+
+    #[test]
+    fn test_cache_key_is_exact() {
+        let key = |v: Vec<Dynamic>| cache_key("", &v);
+
+        assert_ne!(
+            key(vec!["ab".into(), "c".into()]),
+            key(vec!["a".into(), "bc".into()])
+        );
+        assert_ne!(key(vec!["1".into()]), key(vec![1.into()]));
+        assert_ne!(key(vec!["a".into()]), key(vec!['a'.into()]));
+        assert_ne!(cache_key("2", &[]), cache_key("", &["2".into()]));
+        assert_eq!(key(vec![Dynamic::from(1_u8)]), None);
     }
 
     #[test]
@@ -572,5 +629,33 @@ m2 = r2.sub == p2.sub && r2.act == p2.act
         assert!(!e
             .enforce_with_context(EnforceContext::new("2"), ("alice", "read"))
             .unwrap());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(
+        all(feature = "runtime-async-std", not(target_arch = "wasm32")),
+        async_std::test
+    )]
+    #[cfg_attr(
+        all(feature = "runtime-tokio", not(target_arch = "wasm32")),
+        tokio::test
+    )]
+    async fn test_cache_key_hash_collision() {
+        use crate::{MemoryAdapter, MgmtApi};
+
+        let granted = "c80525cd02b185f6";
+        let denied = "b80d2770d0241ce9";
+
+        let mut e = CachedEnforcer::new(
+            "examples/basic_model.conf",
+            MemoryAdapter::default(),
+        )
+        .await
+        .unwrap();
+        e.add_policy(vec!["alice".into(), granted.into(), "read".into()])
+            .await
+            .unwrap();
+        assert!(e.enforce(("alice", granted, "read")).unwrap());
+        assert!(!e.enforce(("alice", denied, "read")).unwrap());
     }
 }

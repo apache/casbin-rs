@@ -9,12 +9,6 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 #[cfg(feature = "cached")]
 use crate::cache::{Cache, DefaultCache};
 
-#[cfg(feature = "cached")]
-use std::{
-    collections::hash_map::DefaultHasher,
-    hash::{Hash, Hasher},
-};
-
 const DEFAULT_DOMAIN: &str = "DEFAULT";
 
 pub struct DefaultRoleManager {
@@ -22,7 +16,7 @@ pub struct DefaultRoleManager {
     all_domains_indices: HashMap<String, HashMap<String, NodeIndex<u32>>>,
     explicit_links: HashMap<String, HashSet<(String, String)>>,
     #[cfg(feature = "cached")]
-    cache: DefaultCache<u64, bool>,
+    cache: DefaultCache<(String, String, String), bool>,
     max_hierarchy_level: usize,
     role_matching_fn: Option<MatchingFn>,
     domain_matching_fn: Option<MatchingFn>,
@@ -484,13 +478,11 @@ impl RoleManager for DefaultRoleManager {
         }
 
         #[cfg(feature = "cached")]
-        let cache_key = {
-            let mut hasher = DefaultHasher::new();
-            name1.hash(&mut hasher);
-            name2.hash(&mut hasher);
-            domain.unwrap_or(DEFAULT_DOMAIN).hash(&mut hasher);
-            hasher.finish()
-        };
+        let cache_key = (
+            name1.to_owned(),
+            name2.to_owned(),
+            domain.unwrap_or(DEFAULT_DOMAIN).to_owned(),
+        );
 
         #[cfg(feature = "cached")]
         if let Some(res) = self.cache.get(&cache_key) {
@@ -805,6 +797,17 @@ mod tests {
     fn sort_unstable<T: Ord>(mut v: Vec<T>) -> Vec<T> {
         v.sort_unstable();
         v
+    }
+
+    #[test]
+    fn test_has_link_cache_hash_collision() {
+        let authorized = "u85b1cd3ad675c9e1";
+        let unauthorized = "ua03255daeb17d9fb";
+
+        let mut rm = DefaultRoleManager::new(10);
+        rm.add_link(authorized, "admin", None);
+        assert!(rm.has_link(authorized, "admin", None));
+        assert!(!rm.has_link(unauthorized, "admin", None));
     }
 
     #[test]
