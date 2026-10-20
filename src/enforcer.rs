@@ -7,7 +7,7 @@ use crate::{
     error::{ModelError, PolicyError, RequestError},
     get_or_err, get_or_err_with_context,
     management_api::MgmtApi,
-    model::{FunctionMap, Model, OperatorFunction},
+    model::{key_match, FunctionMap, Model, OperatorFunction},
     rbac::{DefaultRoleManager, RoleManager},
     register_g_function,
     util::{escape_assertion, escape_eval},
@@ -26,6 +26,7 @@ use crate::watcher::Watcher;
 use crate::{DefaultLogger, Logger};
 
 use async_trait::async_trait;
+use hashlink::LinkedHashSet;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use rhai::{
@@ -52,7 +53,41 @@ def_package! {
 
 static CASBIN_PACKAGE: Lazy<CasbinPackage> = Lazy::new(CasbinPackage::new);
 
-use std::{cmp::max, collections::HashMap, sync::Arc};
+use std::{
+    cmp::{max, Reverse},
+    collections::{HashMap, HashSet, VecDeque},
+    sync::Arc,
+};
+
+fn subject_hierarchy(
+    policies: &LinkedHashSet<Vec<String>>,
+) -> HashMap<(String, String), usize> {
+    let mut children: HashMap<(String, String), Vec<(String, String)>> =
+        HashMap::new();
+    let mut parents = Vec::new();
+    for rule in policies.iter().filter(|rule| rule.len() >= 2) {
+        let domain = rule.get(2).cloned().unwrap_or_default();
+        let child = (domain.clone(), rule[0].clone());
+        let parent = (domain, rule[1].clone());
+        parents.push(parent.clone());
+        children.entry(parent).or_default().push(child);
+    }
+
+    let nested: HashSet<_> = children.values().flatten().collect();
+    let mut levels = HashMap::new();
+    for root in parents.iter().filter(|x| !nested.contains(x)) {
+        let mut queue = VecDeque::from([(root, 0)]);
+        while let Some((node, level)) = queue.pop_front() {
+            if let Some(nodes) =
+                children.get(node).filter(|_| level < policies.len())
+            {
+                queue.extend(nodes.iter().map(|x| (x, level + 1)));
+            }
+            levels.insert(node.clone(), level);
+        }
+    }
+    levels
+}
 
 type EventCallback = fn(&mut Enforcer, EventData);
 
@@ -413,14 +448,84 @@ impl Enforcer {
     }
 
     fn init_rm_map(&mut self) {
+        let model = self.model.get_model();
+        let token = |sec: &str| {
+            model
+                .get(sec)
+                .and_then(|asts| asts.get(sec))
+                .and_then(|ast| ast.tokens.get(1))
+        };
+        let domain_key_match = match (token("r"), token("p")) {
+            (Some(r_dom), Some(p_dom)) => model
+                .get("m")
+                .and_then(|asts| asts.get("m"))
+                .is_some_and(|ast| {
+                    ast.value
+                        .contains(&format!("keyMatch({}, {})", r_dom, p_dom))
+                }),
+            _ => false,
+        };
+        if let Some(ast_map) = model.get("g") {
+            for (ptype, ast) in ast_map {
+                self.rm_map.entry(ptype.to_owned()).or_insert_with(|| {
+                    let mut rm = DefaultRoleManager::new(10);
+                    if domain_key_match && ast.role_token_count() > 2 {
+                        rm.matching_fn(None, Some(key_match));
+                    }
+                    Arc::new(RwLock::new(rm))
+                });
+            }
+        }
         self.rm_map.entry("g".to_owned()).or_insert_with(|| {
             Arc::new(RwLock::new(DefaultRoleManager::new(10)))
         });
-        if let Some(ast_map) = self.model.get_model().get("g") {
-            for ptype in ast_map.keys() {
-                self.rm_map.entry(ptype.to_owned()).or_insert_with(|| {
-                    Arc::new(RwLock::new(DefaultRoleManager::new(10)))
-                });
+    }
+
+    fn sort_policies(&mut self) {
+        let model = self.model.get_mut_model();
+        let hierarchy = model
+            .get("e")
+            .and_then(|asts| asts.get("e"))
+            .filter(|ast| ast.value == "subjectPriority(p_eft) || deny")
+            .and_then(|_| model.get("g").and_then(|asts| asts.get("g")))
+            .map(|ast| subject_hierarchy(&ast.policy));
+
+        if let Some(asts) = model.get_mut("p") {
+            for (ptype, ast) in asts.iter_mut() {
+                let dom_index = ast
+                    .tokens
+                    .iter()
+                    .position(|t| *t == format!("{}_dom", ptype));
+                let priority_index = ast
+                    .tokens
+                    .iter()
+                    .position(|t| *t == format!("{}_priority", ptype));
+                if hierarchy.is_none() && priority_index.is_none() {
+                    continue;
+                }
+
+                let mut policies: Vec<Vec<String>> =
+                    ast.policy.drain().collect();
+                if let Some(hierarchy) = &hierarchy {
+                    policies.sort_by_key(|rule| {
+                        let domain = dom_index
+                            .and_then(|i| rule.get(i))
+                            .map_or("", String::as_str);
+                        let name = rule.first().map_or("", String::as_str);
+                        Reverse(
+                            hierarchy
+                                .get(&(domain.to_owned(), name.to_owned()))
+                                .copied()
+                                .unwrap_or(0),
+                        )
+                    });
+                }
+                if let Some(i) = priority_index {
+                    policies.sort_by_key(|rule| {
+                        rule.get(i).and_then(|x| x.parse::<i64>().ok())
+                    });
+                }
+                ast.policy = policies.into_iter().collect();
             }
         }
     }
@@ -802,6 +907,7 @@ impl CoreApi for Enforcer {
     async fn load_policy(&mut self) -> Result<()> {
         self.model.clear_policy();
         self.adapter.load_policy(&mut *self.model).await?;
+        self.sort_policies();
 
         if self.auto_build_role_links {
             self.build_role_links()?;
@@ -815,6 +921,7 @@ impl CoreApi for Enforcer {
         self.adapter
             .load_filtered_policy(&mut *self.model, f)
             .await?;
+        self.sort_policies();
 
         if self.auto_build_role_links {
             self.build_role_links()?;

@@ -36,6 +36,16 @@ impl Default for Assertion {
 }
 
 impl Assertion {
+    pub(crate) fn role_token_count(&self) -> usize {
+        let params = match (self.value.find('('), self.value.find(')')) {
+            (Some(start), Some(end)) if start < end => {
+                self.value[start..end].matches('_').count()
+            }
+            _ => 0,
+        };
+        self.value.matches('_').count() - params
+    }
+
     #[inline]
     pub fn get_policy(&self) -> &LinkedHashSet<Vec<String>> {
         &self.policy
@@ -51,7 +61,8 @@ impl Assertion {
         rm: Arc<RwLock<dyn RoleManager>>,
     ) -> Result<()> {
         let count = self.value.matches('_').count();
-        if count < 2 {
+        let tokens = self.role_token_count();
+        if tokens < 2 {
             return Err(ModelError::P(
                 r#"the number of "_" in role definition should be at least 2"#
                     .to_owned(),
@@ -66,11 +77,11 @@ impl Assertion {
                 )
                 .into());
             }
-            if count == 2 {
+            if tokens == 2 {
                 rm.write().add_link(&rule[0], &rule[1], None);
-            } else if count == 3 {
+            } else if tokens == 3 {
                 rm.write().add_link(&rule[0], &rule[1], Some(&rule[2]));
-            } else if count >= 4 {
+            } else if tokens >= 4 {
                 return Err(ModelError::P(
                     "Multiple domains are not supported".to_owned(),
                 )
@@ -88,7 +99,8 @@ impl Assertion {
         d: EventData,
     ) -> Result<()> {
         let count = self.value.matches('_').count();
-        if count < 2 {
+        let tokens = self.role_token_count();
+        if tokens < 2 {
             return Err(ModelError::P(
                 r#"the number of "_" in role definition should be at least 2"#
                     .to_owned(),
@@ -114,13 +126,13 @@ impl Assertion {
                     )
                     .into());
                 }
-                if count == 2 {
+                if tokens == 2 {
                     if insert {
                         rm.write().add_link(&rule[0], &rule[1], None);
                     } else {
                         rm.write().delete_link(&rule[0], &rule[1], None)?;
                     }
-                } else if count == 3 {
+                } else if tokens == 3 {
                     if insert {
                         rm.write().add_link(&rule[0], &rule[1], Some(&rule[2]));
                     } else {
@@ -130,7 +142,7 @@ impl Assertion {
                             Some(&rule[2]),
                         )?;
                     }
-                } else if count >= 4 {
+                } else if tokens >= 4 {
                     return Err(ModelError::P(
                         "Multiple domains are not supported".to_owned(),
                     )

@@ -48,7 +48,7 @@ macro_rules! get_or_err_with_context {
 macro_rules! register_g_function {
     ($enforcer:ident, $fname:ident, $ast:ident) => {{
         let rm = Arc::clone(&$enforcer.rm_map[$fname]);
-        let count = $ast.value.matches('_').count();
+        let count = $ast.role_token_count();
 
         if count == 2 {
             $enforcer.engine.register_fn(

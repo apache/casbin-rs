@@ -39,7 +39,8 @@ impl Effector for DefaultEffector {
         let res = match expr {
             "some(where (p_eft == allow))"
             | "some(where (p_eft == allow)) && !some(where (p_eft == deny))"
-            | "priority(p_eft) || deny" => false,
+            | "priority(p_eft) || deny"
+            | "subjectPriority(p_eft) || deny" => false,
             "!some(where (p_eft == deny))" => true,
             _ => panic!("unsupported effect: `{}`", expr),
         };
@@ -93,6 +94,8 @@ impl EffectorStream for DefaultEffectStream {
                 self.done = true;
                 self.res = false;
 
+                #[cfg(feature = "explain")]
+                self.expl.clear();
                 push_index_if_explain!(self)
             }
         } else if self.expr == "!some(where (p_eft == deny))" {
@@ -102,7 +105,8 @@ impl EffectorStream for DefaultEffectStream {
 
                 push_index_if_explain!(self)
             }
-        } else if self.expr == "priority(p_eft) || deny"
+        } else if (self.expr == "priority(p_eft) || deny"
+            || self.expr == "subjectPriority(p_eft) || deny")
             && eft != EffectKind::Indeterminate
         {
             self.res = eft == EffectKind::Allow;

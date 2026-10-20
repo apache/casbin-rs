@@ -15,6 +15,7 @@ static ESC_G: Lazy<Regex> = Lazy::new(|| {
     regex!(r"\b(g\d*)\(((?:\s*[r|p]\d*\.\w+\s*,\s*){1,2}\s*[r|p]\d*\.\w+\s*)\)")
 });
 static ESC_C: Lazy<Regex> = Lazy::new(|| regex!(r#"(\s*"[^"]*"?|\s*[^,]*)"#));
+static ESC_IN: Lazy<Regex> = Lazy::new(|| regex!(r"\bin\s*\(([^()]*)\)"));
 pub(crate) static ESC_E: Lazy<Regex> =
     Lazy::new(|| regex!(r"\beval\(([^)]*)\)"));
 
@@ -38,12 +39,29 @@ pub fn escape_assertion(s: &str) -> String {
         }
         let end = (end + 1).min(bytes.len());
         res.push_str(&ESC_A.replace_all(&s[start..i], "${1}_"));
-        res.push_str(&s[i..end]);
+        if quote == b'\'' && end - i >= 2 && bytes[end - 1] == quote {
+            res.push('"');
+            let mut escaped = false;
+            for c in s[i + 1..end - 1].chars() {
+                if c == '"' && !escaped {
+                    res.push('\\');
+                }
+                escaped = c == '\\' && !escaped;
+                res.push(c);
+            }
+            res.push('"');
+        } else {
+            res.push_str(&s[i..end]);
+        }
         start = end;
         i = end;
     }
     res.push_str(&ESC_A.replace_all(&s[start..], "${1}_"));
     res
+}
+
+pub fn escape_in_operator(m: &str) -> Cow<'_, str> {
+    ESC_IN.replace_all(m, "in [${1}]")
 }
 
 pub fn remove_comment(s: &str) -> String {
@@ -117,7 +135,7 @@ mod tests {
             )
         );
         assert_eq!(
-            r#"r_obj == "a\"p.b" || p_obj == 'r'"#,
+            r#"r_obj == "a\"p.b" || p_obj == "r""#,
             escape_assertion(r#"r.obj == "a\"p.b" || p.obj == 'r'"#)
         );
     }

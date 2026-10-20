@@ -26,6 +26,27 @@ const DEFAULT_COMMENT: &str = "#";
 const DEFAULT_COMMENT_SEM: &str = ";";
 const DEFAULT_MULTI_LINE_SEPARATOR: &str = "\\";
 
+fn remove_inline_comment(line: &str) -> String {
+    let (body, multi_line) =
+        match line.strip_suffix(DEFAULT_MULTI_LINE_SEPARATOR) {
+            Some(body) => (body, true),
+            None => (line, false),
+        };
+    let body = match body.find(|c| {
+        DEFAULT_COMMENT.contains(c) || DEFAULT_COMMENT_SEM.contains(c)
+    }) {
+        Some(idx) => &body[..idx],
+        None => body,
+    }
+    .trim_end();
+
+    if multi_line {
+        format!("{}{}", body, DEFAULT_MULTI_LINE_SEPARATOR)
+    } else {
+        body.to_owned()
+    }
+}
+
 pub(crate) struct Config {
     data: HashMap<String, HashMap<String, String>>,
 }
@@ -87,6 +108,7 @@ impl Config {
                 section = line[1..line.len() - 1].to_string();
             } else {
                 let mut next_section = String::new();
+                line = remove_inline_comment(&line);
                 while line.ends_with(DEFAULT_MULTI_LINE_SEPARATOR) {
                     line = line[..line.len() - 1].trim_end().to_string();
 
@@ -109,7 +131,7 @@ impl Config {
                         next_section =
                             inner_line[1..inner_line.len() - 1].to_string();
                     } else {
-                        line.push_str(&inner_line);
+                        line.push_str(&remove_inline_comment(&inner_line));
                     }
                 }
 

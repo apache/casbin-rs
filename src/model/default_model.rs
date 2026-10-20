@@ -169,6 +169,9 @@ impl Model for DefaultModel {
                 .collect();
         } else {
             ast.value = escape_assertion(&ast.value);
+            if sec == "m" {
+                ast.value = escape_in_operator(&ast.value).into_owned();
+            }
         }
 
         if let Some(new_model) = self.model.get_mut(sec) {

@@ -18,6 +18,12 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+      - name: Checkout Conformance Cases
+        uses: actions/checkout@v4
+        with:
+          repository: apache/casbin
+          path: casbin-conformance
+          sparse-checkout: conformance
       - name: Install Rust toolchain ${{ matrix.rust }}
         run: |
           rustup toolchain install ${{ matrix.rust }} --profile minimal --component rustfmt,clippy --target wasm32-unknown-unknown
@@ -62,6 +68,8 @@ jobs:
         run: cargo test --no-default-features --features runtime-async-std,cached,glob,ip,watcher,logging,incremental,explain
       - name: Cargo Test For All Features Using tokio
         run: cargo test --no-default-features --features runtime-tokio,cached,glob,ip,watcher,logging,incremental,explain
+        env:
+          CASBIN_CONFORMANCE_DIR: ${{ github.workspace }}/casbin-conformance/conformance
       - name: Cargo Check Wasm
         env:
           RUSTFLAGS: '--cfg getrandom_backend="wasm_js"'
