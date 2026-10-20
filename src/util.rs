@@ -19,7 +19,31 @@ pub(crate) static ESC_E: Lazy<Regex> =
     Lazy::new(|| regex!(r"\beval\(([^)]*)\)"));
 
 pub fn escape_assertion(s: &str) -> String {
-    ESC_A.replace_all(s, "${1}_").to_string()
+    let bytes = s.as_bytes();
+    let mut res = String::with_capacity(s.len());
+    let mut start = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        let quote = bytes[i];
+        if quote != b'"' && quote != b'\'' {
+            i += 1;
+            continue;
+        }
+        let mut end = i + 1;
+        while end < bytes.len() && bytes[end] != quote {
+            if bytes[end] == b'\\' {
+                end += 1;
+            }
+            end += 1;
+        }
+        let end = (end + 1).min(bytes.len());
+        res.push_str(&ESC_A.replace_all(&s[start..i], "${1}_"));
+        res.push_str(&s[i..end]);
+        start = end;
+        i = end;
+    }
+    res.push_str(&ESC_A.replace_all(&s[start..], "${1}_"));
+    res
 }
 
 pub fn remove_comment(s: &str) -> String {
@@ -85,6 +109,17 @@ mod tests {
         let exp1 = "g(r2_sub, p2_sub) && r2_obj == p2_obj && r2_act == p2_act";
 
         assert_eq!(exp1, escape_assertion(s1));
+
+        assert_eq!(
+            r#"r_sub == p_sub && r_obj == "https://p.example.com""#,
+            escape_assertion(
+                r#"r.sub == p.sub && r.obj == "https://p.example.com""#
+            )
+        );
+        assert_eq!(
+            r#"r_obj == "a\"p.b" || p_obj == 'r'"#,
+            escape_assertion(r#"r.obj == "a\"p.b" || p.obj == 'r'"#)
+        );
     }
 
     #[test]
