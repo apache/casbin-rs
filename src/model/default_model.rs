@@ -756,14 +756,14 @@ m = regexMatch(r.act, p.act) && r.sub == p.sub && r.obj == p.obj
         let adapter = FileAdapter::new("examples/rbac_policy.csv");
         let e = Enforcer::new(m, adapter).await.unwrap();
 
-        assert_eq!(true, e.enforce(("alice", "data1", "read")).unwrap());
-        assert_eq!(false, e.enforce(("alice", "data1", "write")).unwrap());
-        assert_eq!(true, e.enforce(("alice", "data2", "read")).unwrap());
-        assert_eq!(true, e.enforce(("alice", "data2", "write")).unwrap());
-        assert_eq!(false, e.enforce(("bob", "data1", "read")).unwrap());
-        assert_eq!(false, e.enforce(("bob", "data1", "write")).unwrap());
-        assert_eq!(false, e.enforce(("bob", "data2", "read")).unwrap());
-        assert_eq!(true, e.enforce(("bob", "data2", "write")).unwrap());
+        assert!(e.enforce(("alice", "data1", "read")).unwrap());
+        assert!(!e.enforce(("alice", "data1", "write")).unwrap());
+        assert!(e.enforce(("alice", "data2", "read")).unwrap());
+        assert!(e.enforce(("alice", "data2", "write")).unwrap());
+        assert!(!e.enforce(("bob", "data1", "read")).unwrap());
+        assert!(!e.enforce(("bob", "data1", "write")).unwrap());
+        assert!(!e.enforce(("bob", "data2", "read")).unwrap());
+        assert!(e.enforce(("bob", "data2", "write")).unwrap());
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -786,14 +786,14 @@ m = regexMatch(r.act, p.act) && r.sub == p.sub && r.obj == p.obj
             FileAdapter::new("examples/rbac_with_resource_roles_policy.csv");
         let e = Enforcer::new(m, adapter).await.unwrap();
 
-        assert_eq!(true, e.enforce(("alice", "data1", "read")).unwrap());
-        assert_eq!(true, e.enforce(("alice", "data1", "write")).unwrap());
-        assert_eq!(false, e.enforce(("alice", "data2", "read")).unwrap());
-        assert_eq!(true, e.enforce(("alice", "data2", "write")).unwrap());
-        assert_eq!(false, e.enforce(("bob", "data1", "read")).unwrap());
-        assert_eq!(false, e.enforce(("bob", "data1", "write")).unwrap());
-        assert_eq!(false, e.enforce(("bob", "data2", "read")).unwrap());
-        assert_eq!(true, e.enforce(("bob", "data2", "write")).unwrap());
+        assert!(e.enforce(("alice", "data1", "read")).unwrap());
+        assert!(e.enforce(("alice", "data1", "write")).unwrap());
+        assert!(!e.enforce(("alice", "data2", "read")).unwrap());
+        assert!(e.enforce(("alice", "data2", "write")).unwrap());
+        assert!(!e.enforce(("bob", "data1", "read")).unwrap());
+        assert!(!e.enforce(("bob", "data1", "write")).unwrap());
+        assert!(!e.enforce(("bob", "data2", "read")).unwrap());
+        assert!(e.enforce(("bob", "data2", "write")).unwrap());
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -814,38 +814,14 @@ m = regexMatch(r.act, p.act) && r.sub == p.sub && r.obj == p.obj
         let adapter = FileAdapter::new("examples/rbac_with_domains_policy.csv");
         let e = Enforcer::new(m, adapter).await.unwrap();
 
-        assert_eq!(
-            true,
-            e.enforce(("alice", "domain1", "data1", "read")).unwrap()
-        );
-        assert_eq!(
-            true,
-            e.enforce(("alice", "domain1", "data1", "write")).unwrap()
-        );
-        assert_eq!(
-            false,
-            e.enforce(("alice", "domain1", "data2", "read")).unwrap()
-        );
-        assert_eq!(
-            false,
-            e.enforce(("alice", "domain1", "data2", "write")).unwrap()
-        );
-        assert_eq!(
-            false,
-            e.enforce(("bob", "domain2", "data1", "read")).unwrap()
-        );
-        assert_eq!(
-            false,
-            e.enforce(("bob", "domain2", "data1", "write")).unwrap()
-        );
-        assert_eq!(
-            true,
-            e.enforce(("bob", "domain2", "data2", "read")).unwrap()
-        );
-        assert_eq!(
-            true,
-            e.enforce(("bob", "domain2", "data2", "write")).unwrap()
-        );
+        assert!(e.enforce(("alice", "domain1", "data1", "read")).unwrap());
+        assert!(e.enforce(("alice", "domain1", "data1", "write")).unwrap());
+        assert!(!e.enforce(("alice", "domain1", "data2", "read")).unwrap());
+        assert!(!e.enforce(("alice", "domain1", "data2", "write")).unwrap());
+        assert!(!e.enforce(("bob", "domain2", "data1", "read")).unwrap());
+        assert!(!e.enforce(("bob", "domain2", "data1", "write")).unwrap());
+        assert!(e.enforce(("bob", "domain2", "data2", "read")).unwrap());
+        assert!(e.enforce(("bob", "domain2", "data2", "write")).unwrap());
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -866,7 +842,7 @@ m = regexMatch(r.act, p.act) && r.sub == p.sub && r.obj == p.obj
         let adapter = MemoryAdapter::default();
         let mut e = Enforcer::new(m, adapter).await.unwrap();
         e.add_policy(
-            vec!["admin", "domain1", "data1", "read"]
+            ["admin", "domain1", "data1", "read"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -874,7 +850,7 @@ m = regexMatch(r.act, p.act) && r.sub == p.sub && r.obj == p.obj
         .await
         .unwrap();
         e.add_policy(
-            vec!["admin", "domain1", "data1", "write"]
+            ["admin", "domain1", "data1", "write"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -882,7 +858,7 @@ m = regexMatch(r.act, p.act) && r.sub == p.sub && r.obj == p.obj
         .await
         .unwrap();
         e.add_policy(
-            vec!["admin", "domain2", "data2", "read"]
+            ["admin", "domain2", "data2", "read"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -890,7 +866,7 @@ m = regexMatch(r.act, p.act) && r.sub == p.sub && r.obj == p.obj
         .await
         .unwrap();
         e.add_policy(
-            vec!["admin", "domain2", "data2", "write"]
+            ["admin", "domain2", "data2", "write"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -899,7 +875,7 @@ m = regexMatch(r.act, p.act) && r.sub == p.sub && r.obj == p.obj
         .unwrap();
 
         e.add_grouping_policy(
-            vec!["alice", "admin", "domain1"]
+            ["alice", "admin", "domain1"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -907,7 +883,7 @@ m = regexMatch(r.act, p.act) && r.sub == p.sub && r.obj == p.obj
         .await
         .unwrap();
         e.add_grouping_policy(
-            vec!["bob", "admin", "domain2"]
+            ["bob", "admin", "domain2"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -915,129 +891,50 @@ m = regexMatch(r.act, p.act) && r.sub == p.sub && r.obj == p.obj
         .await
         .unwrap();
 
-        assert_eq!(
-            true,
-            e.enforce(("alice", "domain1", "data1", "read")).unwrap()
-        );
-        assert_eq!(
-            true,
-            e.enforce(("alice", "domain1", "data1", "write")).unwrap()
-        );
-        assert_eq!(
-            false,
-            e.enforce(("alice", "domain1", "data2", "read")).unwrap()
-        );
-        assert_eq!(
-            false,
-            e.enforce(("alice", "domain1", "data2", "write")).unwrap()
-        );
-        assert_eq!(
-            false,
-            e.enforce(("bob", "domain2", "data1", "read")).unwrap()
-        );
-        assert_eq!(
-            false,
-            e.enforce(("bob", "domain2", "data1", "write")).unwrap()
-        );
-        assert_eq!(
-            true,
-            e.enforce(("bob", "domain2", "data2", "read")).unwrap()
-        );
-        assert_eq!(
-            true,
-            e.enforce(("bob", "domain2", "data2", "write")).unwrap()
-        );
+        assert!(e.enforce(("alice", "domain1", "data1", "read")).unwrap());
+        assert!(e.enforce(("alice", "domain1", "data1", "write")).unwrap());
+        assert!(!e.enforce(("alice", "domain1", "data2", "read")).unwrap());
+        assert!(!e.enforce(("alice", "domain1", "data2", "write")).unwrap());
+        assert!(!e.enforce(("bob", "domain2", "data1", "read")).unwrap());
+        assert!(!e.enforce(("bob", "domain2", "data1", "write")).unwrap());
+        assert!(e.enforce(("bob", "domain2", "data2", "read")).unwrap());
+        assert!(e.enforce(("bob", "domain2", "data2", "write")).unwrap());
 
-        assert_eq!(
-            true,
-            e.remove_filtered_policy(
+        assert!(e
+            .remove_filtered_policy(
                 1,
-                vec!["domain1", "data1"]
+                ["domain1", "data1"].iter().map(|s| s.to_string()).collect(),
+            )
+            .await
+            .unwrap());
+
+        assert!(!e.enforce(("alice", "domain1", "data1", "read")).unwrap());
+        assert!(!e.enforce(("alice", "domain1", "data1", "write")).unwrap());
+        assert!(!e.enforce(("alice", "domain1", "data2", "read")).unwrap());
+        assert!(!e.enforce(("alice", "domain1", "data2", "write")).unwrap());
+        assert!(!e.enforce(("bob", "domain2", "data1", "read")).unwrap());
+        assert!(!e.enforce(("bob", "domain2", "data1", "write")).unwrap());
+        assert!(e.enforce(("bob", "domain2", "data2", "read")).unwrap());
+        assert!(e.enforce(("bob", "domain2", "data2", "write")).unwrap());
+
+        assert!(e
+            .remove_policy(
+                ["admin", "domain2", "data2", "read"]
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
             )
             .await
-            .unwrap()
-        );
+            .unwrap());
 
-        assert_eq!(
-            false,
-            e.enforce(("alice", "domain1", "data1", "read")).unwrap()
-        );
-        assert_eq!(
-            false,
-            e.enforce(("alice", "domain1", "data1", "write")).unwrap()
-        );
-        assert_eq!(
-            false,
-            e.enforce(("alice", "domain1", "data2", "read")).unwrap()
-        );
-        assert_eq!(
-            false,
-            e.enforce(("alice", "domain1", "data2", "write")).unwrap()
-        );
-        assert_eq!(
-            false,
-            e.enforce(("bob", "domain2", "data1", "read")).unwrap()
-        );
-        assert_eq!(
-            false,
-            e.enforce(("bob", "domain2", "data1", "write")).unwrap()
-        );
-        assert_eq!(
-            true,
-            e.enforce(("bob", "domain2", "data2", "read")).unwrap()
-        );
-        assert_eq!(
-            true,
-            e.enforce(("bob", "domain2", "data2", "write")).unwrap()
-        );
-
-        assert_eq!(
-            true,
-            e.remove_policy(
-                vec!["admin", "domain2", "data2", "read"]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect(),
-            )
-            .await
-            .unwrap()
-        );
-
-        assert_eq!(
-            false,
-            e.enforce(("alice", "domain1", "data1", "read")).unwrap()
-        );
-        assert_eq!(
-            false,
-            e.enforce(("alice", "domain1", "data1", "write")).unwrap()
-        );
-        assert_eq!(
-            false,
-            e.enforce(("alice", "domain1", "data2", "read")).unwrap()
-        );
-        assert_eq!(
-            false,
-            e.enforce(("alice", "domain1", "data2", "write")).unwrap()
-        );
-        assert_eq!(
-            false,
-            e.enforce(("bob", "domain2", "data1", "read")).unwrap()
-        );
-        assert_eq!(
-            false,
-            e.enforce(("bob", "domain2", "data1", "write")).unwrap()
-        );
-        assert_eq!(
-            false,
-            e.enforce(("bob", "domain2", "data2", "read")).unwrap()
-        );
-        assert_eq!(
-            true,
-            e.enforce(("bob", "domain2", "data2", "write")).unwrap()
-        );
+        assert!(!e.enforce(("alice", "domain1", "data1", "read")).unwrap());
+        assert!(!e.enforce(("alice", "domain1", "data1", "write")).unwrap());
+        assert!(!e.enforce(("alice", "domain1", "data2", "read")).unwrap());
+        assert!(!e.enforce(("alice", "domain1", "data2", "write")).unwrap());
+        assert!(!e.enforce(("bob", "domain2", "data1", "read")).unwrap());
+        assert!(!e.enforce(("bob", "domain2", "data1", "write")).unwrap());
+        assert!(!e.enforce(("bob", "domain2", "data2", "read")).unwrap());
+        assert!(e.enforce(("bob", "domain2", "data2", "write")).unwrap());
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1059,7 +956,7 @@ m = regexMatch(r.act, p.act) && r.sub == p.sub && r.obj == p.obj
         let mut e = Enforcer::new(m, adapter).await.unwrap();
 
         e.add_policy(
-            vec!["admin", "domain3", "data1", "read"]
+            ["admin", "domain3", "data1", "read"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -1067,7 +964,7 @@ m = regexMatch(r.act, p.act) && r.sub == p.sub && r.obj == p.obj
         .await
         .unwrap();
         e.add_grouping_policy(
-            vec!["alice", "admin", "domain3"]
+            ["alice", "admin", "domain3"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -1075,45 +972,27 @@ m = regexMatch(r.act, p.act) && r.sub == p.sub && r.obj == p.obj
         .await
         .unwrap();
 
-        assert_eq!(
-            true,
-            e.enforce(("alice", "domain3", "data1", "read")).unwrap()
-        );
-        assert_eq!(
-            true,
-            e.enforce(("alice", "domain1", "data1", "read")).unwrap()
-        );
+        assert!(e.enforce(("alice", "domain3", "data1", "read")).unwrap());
+        assert!(e.enforce(("alice", "domain1", "data1", "read")).unwrap());
 
         e.remove_filtered_policy(
             1,
-            vec!["domain1", "data1"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            ["domain1", "data1"].iter().map(|s| s.to_string()).collect(),
         )
         .await
         .unwrap();
-        assert_eq!(
-            false,
-            e.enforce(("alice", "domain1", "data1", "read")).unwrap()
-        );
-        assert_eq!(
-            true,
-            e.enforce(("bob", "domain2", "data2", "read")).unwrap()
-        );
+        assert!(!e.enforce(("alice", "domain1", "data1", "read")).unwrap());
+        assert!(e.enforce(("bob", "domain2", "data2", "read")).unwrap());
 
         e.remove_policy(
-            vec!["admin", "domain2", "data2", "read"]
+            ["admin", "domain2", "data2", "read"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
         )
         .await
         .unwrap();
-        assert_eq!(
-            false,
-            e.enforce(("bob", "domain2", "data2", "read")).unwrap()
-        );
+        assert!(!e.enforce(("bob", "domain2", "data2", "read")).unwrap());
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1133,14 +1012,14 @@ m = regexMatch(r.act, p.act) && r.sub == p.sub && r.obj == p.obj
         let adapter = FileAdapter::new("examples/rbac_with_deny_policy.csv");
         let e = Enforcer::new(m, adapter).await.unwrap();
 
-        assert_eq!(true, e.enforce(("alice", "data1", "read")).unwrap());
-        assert_eq!(false, e.enforce(("alice", "data1", "write")).unwrap());
-        assert_eq!(true, e.enforce(("alice", "data2", "read")).unwrap());
-        assert_eq!(false, e.enforce(("alice", "data2", "write")).unwrap());
-        assert_eq!(false, e.enforce(("bob", "data1", "read")).unwrap());
-        assert_eq!(false, e.enforce(("bob", "data1", "write")).unwrap());
-        assert_eq!(false, e.enforce(("bob", "data2", "read")).unwrap());
-        assert_eq!(true, e.enforce(("bob", "data2", "write")).unwrap());
+        assert!(e.enforce(("alice", "data1", "read")).unwrap());
+        assert!(!e.enforce(("alice", "data1", "write")).unwrap());
+        assert!(e.enforce(("alice", "data2", "read")).unwrap());
+        assert!(!e.enforce(("alice", "data2", "write")).unwrap());
+        assert!(!e.enforce(("bob", "data1", "read")).unwrap());
+        assert!(!e.enforce(("bob", "data1", "write")).unwrap());
+        assert!(!e.enforce(("bob", "data2", "read")).unwrap());
+        assert!(e.enforce(("bob", "data2", "write")).unwrap());
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1161,7 +1040,7 @@ m = regexMatch(r.act, p.act) && r.sub == p.sub && r.obj == p.obj
         let adapter = FileAdapter::new("examples/rbac_with_deny_policy.csv");
         let e = Enforcer::new(m, adapter).await.unwrap();
 
-        assert_eq!(false, e.enforce(("alice", "data2", "write")).unwrap());
+        assert!(!e.enforce(("alice", "data2", "write")).unwrap());
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1182,7 +1061,7 @@ m = regexMatch(r.act, p.act) && r.sub == p.sub && r.obj == p.obj
         let mut e = Enforcer::new(m, adapter).await.unwrap();
 
         e.add_grouping_policy(
-            vec!["bob", "data2_admin", "custom_data"]
+            ["bob", "data2_admin", "custom_data"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -1190,17 +1069,17 @@ m = regexMatch(r.act, p.act) && r.sub == p.sub && r.obj == p.obj
         .await
         .unwrap();
 
-        assert_eq!(true, e.enforce(("alice", "data1", "read")).unwrap());
-        assert_eq!(false, e.enforce(("alice", "data1", "write")).unwrap());
-        assert_eq!(true, e.enforce(("alice", "data2", "read")).unwrap());
-        assert_eq!(true, e.enforce(("alice", "data2", "write")).unwrap());
-        assert_eq!(false, e.enforce(("bob", "data1", "read")).unwrap());
-        assert_eq!(false, e.enforce(("bob", "data1", "write")).unwrap());
-        assert_eq!(true, e.enforce(("bob", "data2", "read")).unwrap());
-        assert_eq!(true, e.enforce(("bob", "data2", "write")).unwrap());
+        assert!(e.enforce(("alice", "data1", "read")).unwrap());
+        assert!(!e.enforce(("alice", "data1", "write")).unwrap());
+        assert!(e.enforce(("alice", "data2", "read")).unwrap());
+        assert!(e.enforce(("alice", "data2", "write")).unwrap());
+        assert!(!e.enforce(("bob", "data1", "read")).unwrap());
+        assert!(!e.enforce(("bob", "data1", "write")).unwrap());
+        assert!(e.enforce(("bob", "data2", "read")).unwrap());
+        assert!(e.enforce(("bob", "data2", "write")).unwrap());
 
         e.remove_grouping_policy(
-            vec!["bob", "data2_admin", "custom_data"]
+            ["bob", "data2_admin", "custom_data"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -1208,14 +1087,14 @@ m = regexMatch(r.act, p.act) && r.sub == p.sub && r.obj == p.obj
         .await
         .unwrap();
 
-        assert_eq!(true, e.enforce(("alice", "data1", "read")).unwrap());
-        assert_eq!(false, e.enforce(("alice", "data1", "write")).unwrap());
-        assert_eq!(true, e.enforce(("alice", "data2", "read")).unwrap());
-        assert_eq!(true, e.enforce(("alice", "data2", "write")).unwrap());
-        assert_eq!(false, e.enforce(("bob", "data1", "read")).unwrap());
-        assert_eq!(false, e.enforce(("bob", "data1", "write")).unwrap());
-        assert_eq!(false, e.enforce(("bob", "data2", "read")).unwrap());
-        assert_eq!(true, e.enforce(("bob", "data2", "write")).unwrap());
+        assert!(e.enforce(("alice", "data1", "read")).unwrap());
+        assert!(!e.enforce(("alice", "data1", "write")).unwrap());
+        assert!(e.enforce(("alice", "data2", "read")).unwrap());
+        assert!(e.enforce(("alice", "data2", "write")).unwrap());
+        assert!(!e.enforce(("bob", "data1", "read")).unwrap());
+        assert!(!e.enforce(("bob", "data1", "write")).unwrap());
+        assert!(!e.enforce(("bob", "data2", "read")).unwrap());
+        assert!(e.enforce(("bob", "data2", "write")).unwrap());
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1237,14 +1116,14 @@ m = regexMatch(r.act, p.act) && r.sub == p.sub && r.obj == p.obj
         let adapter = FileAdapter::new("examples/rbac_policy.csv");
         let e = Enforcer::new(m, adapter).await.unwrap();
 
-        assert_eq!(true, e.enforce(("alice", "data1", "read")).unwrap());
-        assert_eq!(false, e.enforce(("alice", "data1", "write")).unwrap());
-        assert_eq!(true, e.enforce(("bob", "data2", "write")).unwrap());
-        assert_eq!(true, e.enforce(("alice", "data2", "write")).unwrap());
-        assert_eq!(true, e.enforce(("alice", "data2", "read")).unwrap());
-        assert_eq!(true, e.enforce(("guest", "data2", "read")).unwrap());
-        assert_eq!(true, e.enforce(("alice", "data3", "read")).unwrap());
-        assert_eq!(true, e.enforce(("bob", "data3", "read")).unwrap());
+        assert!(e.enforce(("alice", "data1", "read")).unwrap());
+        assert!(!e.enforce(("alice", "data1", "write")).unwrap());
+        assert!(e.enforce(("bob", "data2", "write")).unwrap());
+        assert!(e.enforce(("alice", "data2", "write")).unwrap());
+        assert!(e.enforce(("alice", "data2", "read")).unwrap());
+        assert!(e.enforce(("guest", "data2", "read")).unwrap());
+        assert!(e.enforce(("alice", "data3", "read")).unwrap());
+        assert!(e.enforce(("bob", "data3", "read")).unwrap());
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1271,14 +1150,9 @@ m = regexMatch(r.act, p.act) && r.sub == p.sub && r.obj == p.obj
             owner: &'a str,
         }
 
-        assert_eq!(
-            false,
-            e.enforce(("alice", Book { owner: "bob" }, "read")).unwrap()
-        );
-        assert_eq!(
-            true,
-            e.enforce(("alice", Book { owner: "alice" }, "read"))
-                .unwrap()
-        );
+        assert!(!e.enforce(("alice", Book { owner: "bob" }, "read")).unwrap());
+        assert!(e
+            .enforce(("alice", Book { owner: "alice" }, "read"))
+            .unwrap());
     }
 }

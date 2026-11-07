@@ -1,4 +1,5 @@
 #![allow(non_snake_case)]
+
 use crate::{Adapter, DefaultModel, Model, NullAdapter, Result};
 
 #[cfg(not(target_arch = "wasm32"))]
