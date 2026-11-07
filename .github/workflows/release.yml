@@ -17,101 +17,124 @@
 
 name: Release
 
-# Releases are cut by hand: nothing here runs on a merge, only on a pushed tag.
-#
-#   v1.4.0-rc1  ->  GitHub pre-release (the candidate put up for the Apache vote)
-#   v1.4.0      ->  GitHub release + publish to crates.io
-#
-# Either way the release carries an Apache-style source tarball as its only
-# asset. The release manager downloads that tarball and signs / checksums it
-# locally before starting the vote; nothing is signed or uploaded here.
-
 on:
   push:
-    tags:
-      - "v*"
+    tags: ['v*-rc*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing final tag vX.Y.Z, pointing at the approved candidate commit'
+        required: true
+        type: string
+      project_result:
+        description: 'Public project vote result URL (lists.apache.org/thread/...)'
+        required: true
+        type: string
+      incubator_result:
+        description: 'Public IPMC vote result URL (lists.apache.org/thread/...)'
+        required: true
+        type: string
 
 permissions:
   contents: write
 
-env:
-  # Base name of the source release artifact, per Apache naming conventions.
-  ARTIFACT_BASENAME: apache-casbin-rust
+concurrency:
+  group: release-${{ github.repository }}-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   release:
-    name: Release ${{ github.ref_name }}
     if: github.repository == 'apache/casbin-rs'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Resolve version from tag
-        id: version
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate mode and committed version
+        id: meta
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+          EVENT: ${{ github.event_name }}
+          PROJECT_RESULT: ${{ inputs.project_result }}
+          INCUBATOR_RESULT: ${{ inputs.incubator_result }}
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-          # v1.4.0-rc1 -> 1.4.0. The tarball the PPMC votes on is the exact tarball
-          # that ships, so the candidate counter is never part of its name.
-          BASE_VERSION="${VERSION%%-rc*}"
-          if [ "$VERSION" = "$BASE_VERSION" ]; then
-            PRERELEASE=false
+          python .github/scripts/release.py meta "$TAG" >> "$GITHUB_OUTPUT"
+          if [[ "$EVENT" == workflow_dispatch ]]; then
+            [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            [[ "$PROJECT_RESULT" =~ ^https://lists\.apache\.org/thread/[a-z0-9]+$ ]]
+            [[ "$INCUBATOR_RESULT" =~ ^https://lists\.apache\.org/thread/[a-z0-9]+$ ]]
           else
-            PRERELEASE=true
+            [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc[1-9][0-9]*$ ]]
           fi
-          # Anything that is neither vX.Y.Z nor vX.Y.Z-rcN is a typo, and a typo
-          # must not reach crates.io.
-          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$'; then
-            echo "::error::Tag $GITHUB_REF_NAME is not vX.Y.Z or vX.Y.Z-rcN."
-            exit 1
-          fi
-          {
-            echo "base_version=$BASE_VERSION"
-            echo "prerelease=$PRERELEASE"
-          } >> "$GITHUB_OUTPUT"
-          echo "Tag $GITHUB_REF_NAME -> version $BASE_VERSION (pre-release: $PRERELEASE)"
-
-      - name: Verify Cargo.toml matches the tag
-        run: |
-          set -euo pipefail
-          # Read [package].version directly rather than via cargo, which would
-          # write a Cargo.lock and leave the tree dirty for cargo publish.
-          CARGO_VERSION="$(awk '/^\[package\]/{p=1;next} /^\[/{p=0} p && /^version *=/{gsub(/[" ]/,"");sub(/^version=/,"");print;exit}' Cargo.toml)"
-          EXPECTED="${{ steps.version.outputs.base_version }}"
-          if [ "$CARGO_VERSION" != "$EXPECTED" ]; then
-            echo "::error::Cargo.toml says $CARGO_VERSION but the tag asks for $EXPECTED. Bump Cargo.toml, commit, then re-tag."
-            exit 1
-          fi
-
-      - name: Build source release tarball
-        id: package
-        run: |
-          set -euo pipefail
-          NAME="${ARTIFACT_BASENAME}-${{ steps.version.outputs.base_version }}-incubating-src"
-          ASSET="${RUNNER_TEMP}/${NAME}.tar.gz"
-          # git archive gives us exactly the tracked sources at this tag, unpacking
-          # into a single top-level directory named after the release. It is written
-          # outside the checkout so cargo publish still sees a clean tree.
-          git archive --format=tar.gz --prefix="$NAME/" -o "$ASSET" HEAD
-          echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
-          ls -l "$ASSET"
-
-      - name: Publish GitHub release
+      - name: Refuse replacement of an existing GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
-          ASSET: ${{ steps.package.outputs.asset }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          FLAGS=(--title "$TAG" --generate-notes)
-          if [ "${{ steps.version.outputs.prerelease }}" = "true" ]; then
-            FLAGS+=(--prerelease)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo '::error::Release exists; assets will not be overwritten. Inspect partial publication before retrying.'
+            exit 1
           fi
-          gh release create "$TAG" "$ASSET" "${FLAGS[@]}"
-
-      - name: Publish to crates.io
-        if: steps.version.outputs.prerelease == 'false'
+      - name: Export unsigned source candidate
+        if: steps.meta.outputs.is_rc == 'true'
         env:
+          TAG: ${{ github.ref_name }}
+        run: python .github/scripts/release.py archive "$TAG"
+      - name: Verify approved ASF originals against the final tag
+        if: steps.meta.outputs.is_rc == 'false'
+        env:
+          TAG: ${{ inputs.tag }}
+        run: python .github/scripts/release.py verify "$TAG"
+      - name: Select stable Rust toolchain
+        if: steps.meta.outputs.is_rc == 'false'
+        run: rustup default stable
+      - name: Build crate from approved source
+        if: steps.meta.outputs.is_rc == 'false'
+        env:
+          NAME: ${{ steps.meta.outputs.name }}
+        run: |
+          set -euo pipefail
+          cp -a "dist-release/source/$NAME" "$RUNNER_TEMP/$NAME"
+          cd "$RUNNER_TEMP/$NAME"
+          cargo publish --locked --dry-run
+          python "$GITHUB_WORKSPACE/.github/scripts/release.py" crate-check target/package/*.crate
+      - name: Publish approved-source crate
+        if: steps.meta.outputs.is_rc == 'false'
+        env:
+          NAME: ${{ steps.meta.outputs.name }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_TOKEN }}
-        run: cargo publish
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/$NAME"
+          cargo publish --locked
+
+      - name: Write release notes
+        env:
+          IS_RC: ${{ steps.meta.outputs.is_rc }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          PROJECT_RESULT: ${{ inputs.project_result }}
+          INCUBATOR_RESULT: ${{ inputs.incubator_result }}
+        run: |
+          printf 'Apache Casbin (Incubating) — rust %s\n\n' "$VERSION" > release-notes.md
+          cat DISCLAIMER >> release-notes.md
+          if [[ "$IS_RC" == true ]]; then
+            printf '\n\nUnsigned source candidate for review; the RM must sign and stage it before voting. This is not an approved release.\n' >> release-notes.md
+          else
+            printf '\n\nProject result: %s\nIPMC result: %s\nSource assets are the approved ASF originals.\n' "$PROJECT_RESULT" "$INCUBATOR_RESULT" >> release-notes.md
+          fi
+      - name: Create GitHub release without replacing assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+          IS_RC: ${{ steps.meta.outputs.is_rc }}
+        run: |
+          set -euo pipefail
+          kind=(--latest)
+          if [[ "$IS_RC" == true ]]; then kind=(--prerelease --latest=false); fi
+          gh release create "$TAG" --title "$TAG (Apache Casbin Incubating)" --notes-file release-notes.md "${kind[@]}" dist-release/*.tar.gz dist-release/*.sha512 $(find dist-release -maxdepth 1 -name '*.asc' -print)
