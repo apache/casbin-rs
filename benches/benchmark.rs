@@ -39,7 +39,7 @@ fn raw_enforce(r: [&str; 3]) -> bool {
             return true;
         }
     }
-    return false;
+    false
 }
 
 fn b_benchmark_raw(c: &mut Criterion) {
@@ -651,4 +651,22 @@ criterion_group!(
     b_benchmark_rbac_with_deny,
     b_benchmark_priority_model,
 );
+#[cfg(feature = "cached")]
+criterion_group!(
+    cached_benches,
+    b_benchmark_cached_basic_model,
+    b_benchmark_cached_rbac_model,
+    b_benchmark_cached_rbac_model_small,
+    b_benchmark_cached_rbac_model_medium,
+    b_benchmark_cached_rbac_model_large,
+    b_benchmark_cached_rbac_with_resource_roles,
+    b_benchmark_cached_rbac_model_with_domains,
+    b_benchmark_cached_abac_model,
+    b_benchmark_cached_key_match,
+    b_benchmark_cached_rbac_with_deny,
+    b_benchmark_cached_priority_model
+);
+#[cfg(feature = "cached")]
+criterion_main!(benches, cached_benches);
+#[cfg(not(feature = "cached"))]
 criterion_main!(benches);

@@ -72,8 +72,12 @@ mod tests {
             .unwrap()
             .read_to_string(&mut expected_model)
             .unwrap();
-        let expected_model_str =
-            expected_model.replace("\r\n", "\n").replace("\n\n", "\n");
+        let expected_model_str = expected_model
+            .lines()
+            .filter(|line| !line.trim_start().starts_with('#'))
+            .collect::<Vec<_>>()
+            .join("\n")
+            .replace("\n\n", "\n");
 
         assert_eq!(
             received["m"].as_str().unwrap().trim(),

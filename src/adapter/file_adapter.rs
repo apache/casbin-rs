@@ -8,13 +8,8 @@ use crate::{
 
 #[cfg(feature = "runtime-async-std")]
 use async_std::{
-    fs::File as file,
-    io::prelude::*,
-    io::{
-        BufReader as ioBufReader, Error as ioError, ErrorKind as ioErrorKind,
-    },
-    path::Path as ioPath,
-    prelude::*,
+    fs::File as file, io::prelude::*, io::BufReader as ioBufReader,
+    path::Path as ioPath, prelude::*,
 };
 
 #[cfg(feature = "runtime-tokio")]

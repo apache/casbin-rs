@@ -820,18 +820,18 @@ mod tests {
         rm.add_link("u4", "g3", None);
         rm.add_link("g1", "g3", None);
 
-        assert_eq!(true, rm.has_link("u1", "g1", None));
-        assert_eq!(false, rm.has_link("u1", "g2", None));
-        assert_eq!(true, rm.has_link("u1", "g3", None));
-        assert_eq!(true, rm.has_link("u2", "g1", None));
-        assert_eq!(false, rm.has_link("u2", "g2", None));
-        assert_eq!(true, rm.has_link("u2", "g3", None));
-        assert_eq!(false, rm.has_link("u3", "g1", None));
-        assert_eq!(true, rm.has_link("u3", "g2", None));
-        assert_eq!(false, rm.has_link("u3", "g3", None));
-        assert_eq!(false, rm.has_link("u4", "g1", None));
-        assert_eq!(true, rm.has_link("u4", "g2", None));
-        assert_eq!(true, rm.has_link("u4", "g3", None));
+        assert!(rm.has_link("u1", "g1", None));
+        assert!(!rm.has_link("u1", "g2", None));
+        assert!(rm.has_link("u1", "g3", None));
+        assert!(rm.has_link("u2", "g1", None));
+        assert!(!rm.has_link("u2", "g2", None));
+        assert!(rm.has_link("u2", "g3", None));
+        assert!(!rm.has_link("u3", "g1", None));
+        assert!(rm.has_link("u3", "g2", None));
+        assert!(!rm.has_link("u3", "g3", None));
+        assert!(!rm.has_link("u4", "g1", None));
+        assert!(rm.has_link("u4", "g2", None));
+        assert!(rm.has_link("u4", "g3", None));
 
         // test get_roles
         assert_eq!(vec!["g1"], rm.get_roles("u1", None));
@@ -839,31 +839,31 @@ mod tests {
         assert_eq!(vec!["g2"], rm.get_roles("u3", None));
         assert_eq!(vec!["g2", "g3"], sort_unstable(rm.get_roles("u4", None)));
         assert_eq!(vec!["g3"], rm.get_roles("g1", None));
-        assert_eq!(vec![String::new(); 0], rm.get_roles("g2", None));
-        assert_eq!(vec![String::new(); 0], rm.get_roles("g3", None));
+        assert_eq!(Vec::<String>::new(), rm.get_roles("g2", None));
+        assert_eq!(Vec::<String>::new(), rm.get_roles("g3", None));
 
         // test delete_link
         rm.delete_link("g1", "g3", None).unwrap();
         rm.delete_link("u4", "g2", None).unwrap();
-        assert_eq!(true, rm.has_link("u1", "g1", None));
-        assert_eq!(false, rm.has_link("u1", "g2", None));
-        assert_eq!(false, rm.has_link("u1", "g3", None));
-        assert_eq!(true, rm.has_link("u2", "g1", None));
-        assert_eq!(false, rm.has_link("u2", "g2", None));
-        assert_eq!(false, rm.has_link("u2", "g3", None));
-        assert_eq!(false, rm.has_link("u3", "g1", None));
-        assert_eq!(true, rm.has_link("u3", "g2", None));
-        assert_eq!(false, rm.has_link("u3", "g3", None));
-        assert_eq!(false, rm.has_link("u4", "g1", None));
-        assert_eq!(false, rm.has_link("u4", "g2", None));
-        assert_eq!(true, rm.has_link("u4", "g3", None));
+        assert!(rm.has_link("u1", "g1", None));
+        assert!(!rm.has_link("u1", "g2", None));
+        assert!(!rm.has_link("u1", "g3", None));
+        assert!(rm.has_link("u2", "g1", None));
+        assert!(!rm.has_link("u2", "g2", None));
+        assert!(!rm.has_link("u2", "g3", None));
+        assert!(!rm.has_link("u3", "g1", None));
+        assert!(rm.has_link("u3", "g2", None));
+        assert!(!rm.has_link("u3", "g3", None));
+        assert!(!rm.has_link("u4", "g1", None));
+        assert!(!rm.has_link("u4", "g2", None));
+        assert!(rm.has_link("u4", "g3", None));
         assert_eq!(vec!["g1"], rm.get_roles("u1", None));
         assert_eq!(vec!["g1"], rm.get_roles("u2", None));
         assert_eq!(vec!["g2"], rm.get_roles("u3", None));
         assert_eq!(vec!["g3"], rm.get_roles("u4", None));
-        assert_eq!(vec![String::new(); 0], rm.get_roles("g1", None));
-        assert_eq!(vec![String::new(); 0], rm.get_roles("g2", None));
-        assert_eq!(vec![String::new(); 0], rm.get_roles("g3", None));
+        assert_eq!(Vec::<String>::new(), rm.get_roles("g1", None));
+        assert_eq!(Vec::<String>::new(), rm.get_roles("g2", None));
+        assert_eq!(Vec::<String>::new(), rm.get_roles("g3", None));
     }
 
     #[test]
@@ -877,18 +877,18 @@ mod tests {
         rm.add_link("g1", "g3", None);
 
         rm.clear();
-        assert_eq!(false, rm.has_link("u1", "g1", None));
-        assert_eq!(false, rm.has_link("u1", "g2", None));
-        assert_eq!(false, rm.has_link("u1", "g3", None));
-        assert_eq!(false, rm.has_link("u2", "g1", None));
-        assert_eq!(false, rm.has_link("u2", "g2", None));
-        assert_eq!(false, rm.has_link("u2", "g3", None));
-        assert_eq!(false, rm.has_link("u3", "g1", None));
-        assert_eq!(false, rm.has_link("u3", "g2", None));
-        assert_eq!(false, rm.has_link("u3", "g3", None));
-        assert_eq!(false, rm.has_link("u4", "g1", None));
-        assert_eq!(false, rm.has_link("u4", "g2", None));
-        assert_eq!(false, rm.has_link("u4", "g3", None));
+        assert!(!rm.has_link("u1", "g1", None));
+        assert!(!rm.has_link("u1", "g2", None));
+        assert!(!rm.has_link("u1", "g3", None));
+        assert!(!rm.has_link("u2", "g1", None));
+        assert!(!rm.has_link("u2", "g2", None));
+        assert!(!rm.has_link("u2", "g3", None));
+        assert!(!rm.has_link("u3", "g1", None));
+        assert!(!rm.has_link("u3", "g2", None));
+        assert!(!rm.has_link("u3", "g3", None));
+        assert!(!rm.has_link("u4", "g1", None));
+        assert!(!rm.has_link("u4", "g2", None));
+        assert!(!rm.has_link("u4", "g3", None));
     }
 
     #[test]
@@ -901,49 +901,49 @@ mod tests {
         rm.add_link("u4", "admin", Some("domain1"));
         rm.add_link("g1", "admin", Some("domain1"));
 
-        assert_eq!(true, rm.has_link("u1", "g1", Some("domain1")));
-        assert_eq!(false, rm.has_link("u1", "g1", Some("domain2")));
-        assert_eq!(true, rm.has_link("u1", "admin", Some("domain1")));
-        assert_eq!(false, rm.has_link("u1", "admin", Some("domain2")));
+        assert!(rm.has_link("u1", "g1", Some("domain1")));
+        assert!(!rm.has_link("u1", "g1", Some("domain2")));
+        assert!(rm.has_link("u1", "admin", Some("domain1")));
+        assert!(!rm.has_link("u1", "admin", Some("domain2")));
 
-        assert_eq!(true, rm.has_link("u2", "g1", Some("domain1")));
-        assert_eq!(false, rm.has_link("u2", "g1", Some("domain2")));
-        assert_eq!(true, rm.has_link("u2", "admin", Some("domain1")));
-        assert_eq!(false, rm.has_link("u2", "admin", Some("domain2")));
+        assert!(rm.has_link("u2", "g1", Some("domain1")));
+        assert!(!rm.has_link("u2", "g1", Some("domain2")));
+        assert!(rm.has_link("u2", "admin", Some("domain1")));
+        assert!(!rm.has_link("u2", "admin", Some("domain2")));
 
-        assert_eq!(false, rm.has_link("u3", "g1", Some("domain1")));
-        assert_eq!(false, rm.has_link("u3", "g1", Some("domain2")));
-        assert_eq!(false, rm.has_link("u3", "admin", Some("domain1")));
-        assert_eq!(true, rm.has_link("u3", "admin", Some("domain2")));
+        assert!(!rm.has_link("u3", "g1", Some("domain1")));
+        assert!(!rm.has_link("u3", "g1", Some("domain2")));
+        assert!(!rm.has_link("u3", "admin", Some("domain1")));
+        assert!(rm.has_link("u3", "admin", Some("domain2")));
 
-        assert_eq!(false, rm.has_link("u4", "g1", Some("domain1")));
-        assert_eq!(false, rm.has_link("u4", "g1", Some("domain2")));
-        assert_eq!(true, rm.has_link("u4", "admin", Some("domain1")));
-        assert_eq!(true, rm.has_link("u4", "admin", Some("domain2")));
+        assert!(!rm.has_link("u4", "g1", Some("domain1")));
+        assert!(!rm.has_link("u4", "g1", Some("domain2")));
+        assert!(rm.has_link("u4", "admin", Some("domain1")));
+        assert!(rm.has_link("u4", "admin", Some("domain2")));
 
         rm.delete_link("g1", "admin", Some("domain1")).unwrap();
 
         rm.delete_link("u4", "admin", Some("domain2")).unwrap();
 
-        assert_eq!(true, rm.has_link("u1", "g1", Some("domain1")));
-        assert_eq!(false, rm.has_link("u1", "g1", Some("domain2")));
-        assert_eq!(false, rm.has_link("u1", "admin", Some("domain1")));
-        assert_eq!(false, rm.has_link("u1", "admin", Some("domain2")));
+        assert!(rm.has_link("u1", "g1", Some("domain1")));
+        assert!(!rm.has_link("u1", "g1", Some("domain2")));
+        assert!(!rm.has_link("u1", "admin", Some("domain1")));
+        assert!(!rm.has_link("u1", "admin", Some("domain2")));
 
-        assert_eq!(true, rm.has_link("u2", "g1", Some("domain1")));
-        assert_eq!(false, rm.has_link("u2", "g1", Some("domain2")));
-        assert_eq!(false, rm.has_link("u2", "admin", Some("domain1")));
-        assert_eq!(false, rm.has_link("u2", "admin", Some("domain2")));
+        assert!(rm.has_link("u2", "g1", Some("domain1")));
+        assert!(!rm.has_link("u2", "g1", Some("domain2")));
+        assert!(!rm.has_link("u2", "admin", Some("domain1")));
+        assert!(!rm.has_link("u2", "admin", Some("domain2")));
 
-        assert_eq!(false, rm.has_link("u3", "g1", Some("domain1")));
-        assert_eq!(false, rm.has_link("u3", "g1", Some("domain2")));
-        assert_eq!(false, rm.has_link("u3", "admin", Some("domain1")));
-        assert_eq!(true, rm.has_link("u3", "admin", Some("domain2")));
+        assert!(!rm.has_link("u3", "g1", Some("domain1")));
+        assert!(!rm.has_link("u3", "g1", Some("domain2")));
+        assert!(!rm.has_link("u3", "admin", Some("domain1")));
+        assert!(rm.has_link("u3", "admin", Some("domain2")));
 
-        assert_eq!(false, rm.has_link("u4", "g1", Some("domain1")));
-        assert_eq!(false, rm.has_link("u4", "g1", Some("domain2")));
-        assert_eq!(true, rm.has_link("u4", "admin", Some("domain1")));
-        assert_eq!(false, rm.has_link("u4", "admin", Some("domain2")));
+        assert!(!rm.has_link("u4", "g1", Some("domain1")));
+        assert!(!rm.has_link("u4", "g1", Some("domain2")));
+        assert!(rm.has_link("u4", "admin", Some("domain1")));
+        assert!(!rm.has_link("u4", "admin", Some("domain2")));
     }
 
     #[test]

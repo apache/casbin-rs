@@ -452,15 +452,15 @@ mod tests {
         let mut e = Enforcer::new(m, adapter).await.unwrap();
 
         assert_eq!(vec!["data2_admin"], e.get_roles_for_user("alice", None));
-        assert_eq!(vec![String::new(); 0], e.get_roles_for_user("bob", None));
-        assert_eq!(vec![String::new(); 0], e.get_roles_for_user("eve", None));
+        assert_eq!(Vec::<String>::new(), e.get_roles_for_user("bob", None));
+        assert_eq!(Vec::<String>::new(), e.get_roles_for_user("eve", None));
         assert_eq!(
-            vec![String::new(); 0],
+            Vec::<String>::new(),
             e.get_roles_for_user("non_exist", None)
         );
 
         e.remove_grouping_policy(
-            vec!["alice", "data2_admin"]
+            ["alice", "data2_admin"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -468,7 +468,7 @@ mod tests {
         .await
         .unwrap();
         e.add_grouping_policy(
-            vec!["bob", "data1_admin"]
+            ["bob", "data1_admin"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -476,7 +476,7 @@ mod tests {
         .await
         .unwrap();
         e.add_grouping_policy(
-            vec!["eve", "data3_admin"]
+            ["eve", "data3_admin"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -486,7 +486,7 @@ mod tests {
 
         let named_grouping_policy =
             vec!["alice".to_string(), "data2_admin".to_string()];
-        assert_eq!(vec![String::new(); 0], e.get_roles_for_user("alice", None));
+        assert_eq!(Vec::<String>::new(), e.get_roles_for_user("alice", None));
         e.add_named_grouping_policy("g", named_grouping_policy.clone())
             .await
             .unwrap();
@@ -496,7 +496,7 @@ mod tests {
             .unwrap();
 
         e.remove_grouping_policy(
-            vec!["alice", "data2_admin"]
+            ["alice", "data2_admin"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -504,7 +504,7 @@ mod tests {
         .await
         .unwrap();
         e.add_grouping_policy(
-            vec!["bob", "data1_admin"]
+            ["bob", "data1_admin"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -512,7 +512,7 @@ mod tests {
         .await
         .unwrap();
         e.add_grouping_policy(
-            vec!["eve", "data3_admin"]
+            ["eve", "data3_admin"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -522,32 +522,32 @@ mod tests {
 
         assert_eq!(vec!["bob"], e.get_users_for_role("data1_admin", None));
         assert_eq!(
-            vec![String::new(); 0],
+            Vec::<String>::new(),
             e.get_users_for_role("data2_admin", None)
         );
         assert_eq!(vec!["eve"], e.get_users_for_role("data3_admin", None));
 
         e.remove_filtered_grouping_policy(
             0,
-            vec!["bob"].iter().map(|s| s.to_string()).collect(),
+            ["bob"].iter().map(|s| s.to_string()).collect(),
         )
         .await
         .unwrap();
 
-        assert_eq!(vec![String::new(); 0], e.get_roles_for_user("alice", None));
-        assert_eq!(vec![String::new(); 0], e.get_roles_for_user("bob", None));
+        assert_eq!(Vec::<String>::new(), e.get_roles_for_user("alice", None));
+        assert_eq!(Vec::<String>::new(), e.get_roles_for_user("bob", None));
         assert_eq!(vec!["data3_admin"], e.get_roles_for_user("eve", None));
         assert_eq!(
-            vec![String::new(); 0],
+            Vec::<String>::new(),
             e.get_roles_for_user("non_exist", None)
         );
 
         assert_eq!(
-            vec![String::new(); 0],
+            Vec::<String>::new(),
             e.get_users_for_role("data1_admin", None)
         );
         assert_eq!(
-            vec![String::new(); 0],
+            Vec::<String>::new(),
             e.get_users_for_role("data2_admin", None)
         );
         assert_eq!(vec!["eve"], e.get_users_for_role("data3_admin", None));
@@ -581,7 +581,7 @@ mod tests {
         );
 
         e.remove_policy(
-            vec!["alice", "data1", "read"]
+            ["alice", "data1", "read"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -589,7 +589,7 @@ mod tests {
         .await
         .unwrap();
         e.remove_policy(
-            vec!["bob", "data2", "write"]
+            ["bob", "data2", "write"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -597,7 +597,7 @@ mod tests {
         .await
         .unwrap();
         e.remove_policy(
-            vec!["alice", "data1", "read"]
+            ["alice", "data1", "read"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -605,7 +605,7 @@ mod tests {
         .await
         .unwrap();
         e.add_policy(
-            vec!["eve", "data3", "read"]
+            ["eve", "data3", "read"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -613,7 +613,7 @@ mod tests {
         .await
         .unwrap();
         e.add_policy(
-            vec!["eve", "data3", "read"]
+            ["eve", "data3", "read"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -639,7 +639,7 @@ mod tests {
 
         e.remove_filtered_policy(
             1,
-            vec!["data2"].iter().map(|s| s.to_string()).collect(),
+            ["data2"].iter().map(|s| s.to_string()).collect(),
         )
         .await
         .unwrap();
@@ -677,14 +677,14 @@ mod tests {
             vec![vec!["alice", "data1", "read"]],
             e.get_filtered_policy(
                 0,
-                vec!["alice"].iter().map(|s| s.to_string()).collect()
+                ["alice"].iter().map(|s| s.to_string()).collect()
             )
         );
         assert_eq!(
             vec![vec!["bob", "data2", "write"]],
             e.get_filtered_policy(
                 0,
-                vec!["bob"].iter().map(|s| s.to_string()).collect()
+                ["bob"].iter().map(|s| s.to_string()).collect()
             )
         );
         assert_eq!(
@@ -694,14 +694,14 @@ mod tests {
             ],
             sort_unstable(e.get_filtered_policy(
                 0,
-                vec!["data2_admin"].iter().map(|s| s.to_string()).collect()
+                ["data2_admin"].iter().map(|s| s.to_string()).collect()
             ))
         );
         assert_eq!(
             vec![vec!["alice", "data1", "read"],],
             e.get_filtered_policy(
                 1,
-                vec!["data1"].iter().map(|s| s.to_string()).collect()
+                ["data1"].iter().map(|s| s.to_string()).collect()
             )
         );
         assert_eq!(
@@ -712,7 +712,7 @@ mod tests {
             ],
             sort_unstable(e.get_filtered_policy(
                 1,
-                vec!["data2"].iter().map(|s| s.to_string()).collect()
+                ["data2"].iter().map(|s| s.to_string()).collect()
             ))
         );
         assert_eq!(
@@ -722,7 +722,7 @@ mod tests {
             ],
             sort_unstable(e.get_filtered_policy(
                 2,
-                vec!["read"].iter().map(|s| s.to_string()).collect()
+                ["read"].iter().map(|s| s.to_string()).collect()
             ))
         );
         assert_eq!(
@@ -732,7 +732,7 @@ mod tests {
             ],
             sort_unstable(e.get_filtered_policy(
                 2,
-                vec!["write"].iter().map(|s| s.to_string()).collect()
+                ["write"].iter().map(|s| s.to_string()).collect()
             ))
         );
         assert_eq!(
@@ -743,7 +743,7 @@ mod tests {
             sort_unstable(
                 e.get_filtered_policy(
                     0,
-                    vec!["data2_admin", "data2"]
+                    ["data2_admin", "data2"]
                         .iter()
                         .map(|s| s.to_string())
                         .collect()
@@ -755,7 +755,7 @@ mod tests {
             vec![vec!["data2_admin", "data2", "read"],],
             e.get_filtered_policy(
                 0,
-                vec!["data2_admin", "", "read"]
+                ["data2_admin", "", "read"]
                     .iter()
                     .map(|s| s.to_string())
                     .collect()
@@ -766,59 +766,42 @@ mod tests {
                 vec!["bob", "data2", "write"],
                 vec!["data2_admin", "data2", "write"],
             ],
-            sort_unstable(
-                e.get_filtered_policy(
-                    1,
-                    vec!["data2", "write"]
-                        .iter()
-                        .map(|s| s.to_string())
-                        .collect()
-                )
-            )
+            sort_unstable(e.get_filtered_policy(
+                1,
+                ["data2", "write"].iter().map(|s| s.to_string()).collect()
+            ))
         );
 
-        assert_eq!(
-            true,
-            e.has_policy(
-                vec!["alice", "data1", "read"]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect()
-            )
-        );
-        assert_eq!(
-            true,
-            e.has_policy(
-                vec!["bob", "data2", "write"]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect()
-            )
-        );
-        assert_eq!(
-            false,
-            e.has_policy(
-                vec!["alice", "data2", "read"]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect()
-            )
-        );
-        assert_eq!(
-            false,
-            e.has_policy(
-                vec!["bob", "data3", "write"]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect()
-            )
-        );
+        assert!(e.has_policy(
+            ["alice", "data1", "read"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        ));
+        assert!(e.has_policy(
+            ["bob", "data2", "write"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        ));
+        assert!(!e.has_policy(
+            ["alice", "data2", "read"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        ));
+        assert!(!e.has_policy(
+            ["bob", "data3", "write"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        ));
 
         assert_eq!(
             vec![vec!["alice", "data2_admin"]],
             e.get_filtered_grouping_policy(
                 0,
-                vec!["alice"].iter().map(|s| s.to_string()).collect()
+                ["alice"].iter().map(|s| s.to_string()).collect()
             )
         );
         let empty_policy: Vec<Vec<String>> = vec![];
@@ -826,21 +809,21 @@ mod tests {
             empty_policy,
             e.get_filtered_grouping_policy(
                 0,
-                vec!["bob"].iter().map(|s| s.to_string()).collect()
+                ["bob"].iter().map(|s| s.to_string()).collect()
             )
         );
         assert_eq!(
             empty_policy,
             e.get_filtered_grouping_policy(
                 1,
-                vec!["data1_admin"].iter().map(|s| s.to_string()).collect()
+                ["data1_admin"].iter().map(|s| s.to_string()).collect()
             )
         );
         assert_eq!(
             vec![vec!["alice", "data2_admin"],],
             e.get_filtered_grouping_policy(
                 1,
-                vec!["data2_admin"].iter().map(|s| s.to_string()).collect()
+                ["data2_admin"].iter().map(|s| s.to_string()).collect()
             )
         );
         // Note: "" (empty string) in fieldValues means matching all values.
@@ -848,28 +831,22 @@ mod tests {
             empty_policy,
             e.get_filtered_grouping_policy(
                 0,
-                vec!["data2_admin"].iter().map(|s| s.to_string()).collect()
+                ["data2_admin"].iter().map(|s| s.to_string()).collect()
             )
         );
 
-        assert_eq!(
-            true,
-            e.has_grouping_policy(
-                vec!["alice", "data2_admin"]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect()
-            )
-        );
-        assert_eq!(
-            false,
-            e.has_grouping_policy(
-                vec!["bob", "data2_admin"]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect()
-            )
-        );
+        assert!(e.has_grouping_policy(
+            ["alice", "data2_admin"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        ));
+        assert!(!e.has_grouping_policy(
+            ["bob", "data2_admin"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        ));
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -926,122 +903,95 @@ mod tests {
         );
 
         e.remove_policies(vec![
-            vec!["alice", "data1", "read"]
+            ["alice", "data1", "read"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-            vec!["bob", "data2", "write"]
+            ["bob", "data2", "write"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
         ])
         .await
         .unwrap();
-        e.remove_policies(vec![vec!["alice", "data1", "read"]
+        e.remove_policies(vec![["alice", "data1", "read"]
             .iter()
             .map(|s| s.to_string())
             .collect()])
             .await
             .unwrap();
-        assert_eq!(
-            false,
-            e.has_policy(
-                vec!["alice", "data1", "read"]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect()
-            )
-        );
-        assert_eq!(
-            false,
-            e.has_policy(
-                vec!["bob", "data2", "write"]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect()
-            )
-        );
-        assert_eq!(
-            true,
-            e.has_policy(
-                vec!["data2_admin", "data2", "read"]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect()
-            )
-        );
-        assert_eq!(
-            true,
-            e.has_policy(
-                vec!["data2_admin", "data2", "write"]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect()
-            )
-        );
-        e.add_policies(vec![vec!["eve", "data3", "read"]
+        assert!(!e.has_policy(
+            ["alice", "data1", "read"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        ));
+        assert!(!e.has_policy(
+            ["bob", "data2", "write"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        ));
+        assert!(e.has_policy(
+            ["data2_admin", "data2", "read"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        ));
+        assert!(e.has_policy(
+            ["data2_admin", "data2", "write"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        ));
+        e.add_policies(vec![["eve", "data3", "read"]
             .iter()
             .map(|s| s.to_string())
             .collect()])
             .await
             .unwrap();
         e.add_policies(vec![
-            vec!["eve", "data3", "read"]
+            ["eve", "data3", "read"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-            vec!["eve", "data3", "read"]
+            ["eve", "data3", "read"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
         ])
         .await
         .unwrap();
-        assert_eq!(
-            false,
-            e.has_policy(
-                vec!["alice", "data1", "read"]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect()
-            )
-        );
-        assert_eq!(
-            false,
-            e.has_policy(
-                vec!["bob", "data2", "write"]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect()
-            )
-        );
-        assert_eq!(
-            true,
-            e.has_policy(
-                vec!["eve", "data3", "read"]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect()
-            )
-        );
-        assert_eq!(
-            true,
-            e.has_policy(
-                vec!["data2_admin", "data2", "read"]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect()
-            )
-        );
-        assert_eq!(
-            true,
-            e.has_policy(
-                vec!["data2_admin", "data2", "write"]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect()
-            )
-        );
+        assert!(!e.has_policy(
+            ["alice", "data1", "read"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        ));
+        assert!(!e.has_policy(
+            ["bob", "data2", "write"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        ));
+        assert!(e.has_policy(
+            ["eve", "data3", "read"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        ));
+        assert!(e.has_policy(
+            ["data2_admin", "data2", "read"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        ));
+        assert!(e.has_policy(
+            ["data2_admin", "data2", "write"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        ));
 
         let named_policy =
             vec!["eve".to_string(), "data3".to_string(), "read".to_string()];
@@ -1063,7 +1013,7 @@ mod tests {
 
         e.remove_filtered_policy(
             1,
-            vec!["data2"].iter().map(|s| s.to_string()).collect(),
+            ["data2"].iter().map(|s| s.to_string()).collect(),
         )
         .await
         .unwrap();
@@ -1088,38 +1038,38 @@ mod tests {
         let mut e = Enforcer::new(m, adapter).await.unwrap();
 
         assert_eq!(vec!["data2_admin"], e.get_roles_for_user("alice", None));
-        assert_eq!(vec![String::new(); 0], e.get_roles_for_user("bob", None));
-        assert_eq!(vec![String::new(); 0], e.get_roles_for_user("eve", None));
+        assert_eq!(Vec::<String>::new(), e.get_roles_for_user("bob", None));
+        assert_eq!(Vec::<String>::new(), e.get_roles_for_user("eve", None));
         assert_eq!(
-            vec![String::new(); 0],
+            Vec::<String>::new(),
             e.get_roles_for_user("non_exist", None)
         );
 
-        e.remove_grouping_policies(vec![vec!["alice", "data2_admin"]
+        e.remove_grouping_policies(vec![["alice", "data2_admin"]
             .iter()
             .map(|s| s.to_string())
             .collect()])
             .await
             .unwrap();
         e.add_grouping_policies(vec![
-            vec!["bob", "data1_admin"]
+            ["bob", "data1_admin"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-            vec!["eve", "data3_admin"]
+            ["eve", "data3_admin"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
         ])
         .await
         .unwrap();
-        assert_eq!(vec![String::new(); 0], e.get_roles_for_user("alice", None));
+        assert_eq!(Vec::<String>::new(), e.get_roles_for_user("alice", None));
         assert_eq!(vec!["data1_admin"], e.get_roles_for_user("bob", None));
         assert_eq!(vec!["data3_admin"], e.get_roles_for_user("eve", None));
 
         let named_grouping_policy =
             vec!["alice".to_string(), "data2_admin".to_string()];
-        assert_eq!(vec![String::new(); 0], e.get_roles_for_user("alice", None));
+        assert_eq!(Vec::<String>::new(), e.get_roles_for_user("alice", None));
         e.add_named_grouping_policies("g", vec![named_grouping_policy.clone()])
             .await
             .unwrap();
@@ -1131,7 +1081,7 @@ mod tests {
         .await
         .unwrap();
 
-        e.remove_grouping_policies(vec![vec!["alice", "data2_admin"]
+        e.remove_grouping_policies(vec![["alice", "data2_admin"]
             .iter()
             .map(|s| s.to_string())
             .collect()])
@@ -1139,11 +1089,11 @@ mod tests {
             .unwrap();
 
         e.add_grouping_policies(vec![
-            vec!["bob", "data1_admin"]
+            ["bob", "data1_admin"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-            vec!["eve", "data3_admin"]
+            ["eve", "data3_admin"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -1153,32 +1103,32 @@ mod tests {
 
         assert_eq!(vec!["bob"], e.get_users_for_role("data1_admin", None));
         assert_eq!(
-            vec![String::new(); 0],
+            Vec::<String>::new(),
             e.get_users_for_role("data2_admin", None)
         );
         assert_eq!(vec!["eve"], e.get_users_for_role("data3_admin", None));
 
         e.remove_filtered_grouping_policy(
             0,
-            vec!["bob"].iter().map(|s| s.to_string()).collect(),
+            ["bob"].iter().map(|s| s.to_string()).collect(),
         )
         .await
         .unwrap();
 
-        assert_eq!(vec![String::new(); 0], e.get_roles_for_user("alice", None));
-        assert_eq!(vec![String::new(); 0], e.get_roles_for_user("bob", None));
+        assert_eq!(Vec::<String>::new(), e.get_roles_for_user("alice", None));
+        assert_eq!(Vec::<String>::new(), e.get_roles_for_user("bob", None));
         assert_eq!(vec!["data3_admin"], e.get_roles_for_user("eve", None));
         assert_eq!(
-            vec![String::new(); 0],
+            Vec::<String>::new(),
             e.get_roles_for_user("non_exist", None)
         );
 
         assert_eq!(
-            vec![String::new(); 0],
+            Vec::<String>::new(),
             e.get_users_for_role("data1_admin", None)
         );
         assert_eq!(
-            vec![String::new(); 0],
+            Vec::<String>::new(),
             e.get_users_for_role("data2_admin", None)
         );
         assert_eq!(vec!["eve"], e.get_users_for_role("data3_admin", None));
