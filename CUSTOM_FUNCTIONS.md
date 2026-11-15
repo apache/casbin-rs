@@ -147,6 +147,39 @@ The `OperatorFunction` enum supports functions with 0 to 6 arguments:
 - `Arg5`: `fn(Dynamic, Dynamic, Dynamic, Dynamic, Dynamic) -> Dynamic`
 - `Arg6`: `fn(Dynamic, Dynamic, Dynamic, Dynamic, Dynamic, Dynamic) -> Dynamic`
 
+The `ArgN` variants take plain function pointers, so they cannot capture variables. When a function needs state, such as a database connection pool or application config, use the matching `ArgNClosure` variant (`Arg0Closure` to `Arg6Closure`), which takes an `Arc<dyn Fn(...) -> Dynamic + Send + Sync>`.
+
+## Capturing State (e.g. a Database Connection)
+
+```rust
+use std::sync::Arc;
+use casbin::{CoreApi, OperatorFunction};
+use rhai::Dynamic;
+
+let pool = app_state.db_pool.clone();
+e.add_function(
+    "productHasStorages",
+    OperatorFunction::Arg1Closure(Arc::new(move |product_id: Dynamic| {
+        let id = product_id.as_int().unwrap_or(0);
+        let conn = match pool.get() {
+            Ok(conn) => conn,
+            Err(_) => return false.into(),
+        };
+        product_has_storages(&conn, id).into()
+    })),
+);
+```
+
+```conf
+[matchers]
+m = r.sub == p.sub && r.act == p.act && productHasStorages(r.obj)
+```
+
+Notes:
+
+- Custom functions are called synchronously during `enforce`, so use a blocking client or pool (for example `r2d2`) inside the closure. Do not call `.await` or `block_on` on the async runtime that is running `enforce`.
+- `CachedEnforcer` caches results by request. If the function's result depends on data that changes, use `Enforcer`, or call `invalidate_cache()` after the data changes.
+
 ## Working with Dynamic Types
 
 Rhai's `Dynamic` type provides several methods to extract values:

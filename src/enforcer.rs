@@ -444,6 +444,53 @@ impl Enforcer {
             OperatorFunction::Arg6(func) => {
                 engine.register_fn(key, func);
             }
+            OperatorFunction::Arg0Closure(func) => {
+                engine.register_fn(key, move || func());
+            }
+            OperatorFunction::Arg1Closure(func) => {
+                engine.register_fn(key, move |a: Dynamic| func(a));
+            }
+            OperatorFunction::Arg2Closure(func) => {
+                engine
+                    .register_fn(key, move |a: Dynamic, b: Dynamic| func(a, b));
+            }
+            OperatorFunction::Arg3Closure(func) => {
+                engine.register_fn(
+                    key,
+                    move |a: Dynamic, b: Dynamic, c: Dynamic| func(a, b, c),
+                );
+            }
+            OperatorFunction::Arg4Closure(func) => {
+                engine.register_fn(
+                    key,
+                    move |a: Dynamic, b: Dynamic, c: Dynamic, d: Dynamic| {
+                        func(a, b, c, d)
+                    },
+                );
+            }
+            OperatorFunction::Arg5Closure(func) => {
+                engine.register_fn(
+                    key,
+                    move |a: Dynamic,
+                          b: Dynamic,
+                          c: Dynamic,
+                          d: Dynamic,
+                          e: Dynamic| func(a, b, c, d, e),
+                );
+            }
+            OperatorFunction::Arg6Closure(func) => {
+                engine.register_fn(
+                    key,
+                    move |a: Dynamic,
+                          b: Dynamic,
+                          c: Dynamic,
+                          d: Dynamic,
+                          e: Dynamic,
+                          f: Dynamic| {
+                        func(a, b, c, d, e, f)
+                    },
+                );
+            }
         }
     }
 
@@ -558,8 +605,8 @@ impl CoreApi for Enforcer {
 
         engine.register_global_module(CASBIN_PACKAGE.as_shared_module());
 
-        for (key, &func) in fm.get_functions() {
-            Self::register_function(&mut engine, key, func);
+        for (key, func) in fm.get_functions() {
+            Self::register_function(&mut engine, key, func.clone());
         }
 
         let mut e = Self {
@@ -612,7 +659,7 @@ impl CoreApi for Enforcer {
 
     #[inline]
     fn add_function(&mut self, fname: &str, f: OperatorFunction) {
-        self.fm.add_function(fname, f);
+        self.fm.add_function(fname, f.clone());
         Self::register_function(&mut self.engine, fname, f);
     }
 
@@ -2169,5 +2216,71 @@ m = r.sub == p.sub && r.obj == p.obj && r.act == p.act
         assert_eq!(true, e.enforce(("alice", "data1", "read")).unwrap());
         assert_eq!(false, e.enforce(("alice", "data1", "write")).unwrap());
         assert_eq!(false, e.enforce(("bob", "data1", "read")).unwrap());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(
+        all(feature = "runtime-async-std", not(target_arch = "wasm32")),
+        async_std::test
+    )]
+    #[cfg_attr(
+        all(feature = "runtime-tokio", not(target_arch = "wasm32")),
+        tokio::test
+    )]
+    async fn test_custom_function_closure_captures_state() {
+        use crate::prelude::*;
+        use std::collections::HashSet;
+        use std::sync::{Arc, Mutex};
+
+        let m = DefaultModel::from_str(
+            r#"
+[request_definition]
+r = sub, obj, act
+
+[policy_definition]
+p = sub, act
+
+[policy_effect]
+e = some(where (p.eft == allow))
+
+[matchers]
+m = r.sub == p.sub && r.act == p.act && isOwner(r.sub, r.obj)
+"#,
+        )
+        .await
+        .unwrap();
+
+        let owners: Arc<Mutex<HashSet<(String, String)>>> =
+            Arc::new(Mutex::new(HashSet::new()));
+        owners
+            .lock()
+            .unwrap()
+            .insert(("alice".to_owned(), "doc1".to_owned()));
+
+        let mut e = Enforcer::new(m, MemoryAdapter::default()).await.unwrap();
+        let db = owners.clone();
+        e.add_function(
+            "isOwner",
+            OperatorFunction::Arg2Closure(Arc::new(
+                move |sub: Dynamic, obj: Dynamic| {
+                    db.lock()
+                        .unwrap()
+                        .contains(&(sub.to_string(), obj.to_string()))
+                        .into()
+                },
+            )),
+        );
+        e.add_policy(vec!["alice".to_owned(), "read".to_owned()])
+            .await
+            .unwrap();
+
+        assert!(e.enforce(("alice", "doc1", "read")).unwrap());
+        assert!(!e.enforce(("alice", "doc2", "read")).unwrap());
+
+        owners
+            .lock()
+            .unwrap()
+            .insert(("alice".to_owned(), "doc2".to_owned()));
+        assert!(e.enforce(("alice", "doc2", "read")).unwrap());
     }
 }

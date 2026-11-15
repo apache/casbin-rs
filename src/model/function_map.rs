@@ -15,7 +15,7 @@ use rhai::Dynamic;
 static MAT_B: Lazy<Regex> = Lazy::new(|| Regex::new(r":[^/]*").unwrap());
 static MAT_P: Lazy<Regex> = Lazy::new(|| Regex::new(r"\{[^/]*\}").unwrap());
 
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
 /// Represents a custom operator function that can be registered with Casbin.
 ///
@@ -51,7 +51,21 @@ use std::{borrow::Cow, collections::HashMap};
 ///     a_str.contains(b_str.as_ref()).into()
 /// });
 /// ```
-#[derive(Clone, Copy)]
+///
+/// The `ArgN` variants take plain function pointers. Use the `ArgNClosure`
+/// variants when the function needs to capture state, such as a database
+/// connection pool:
+///
+/// ```rust,ignore
+/// use std::sync::Arc;
+///
+/// let pool = pool.clone();
+/// let has_storages = OperatorFunction::Arg1Closure(Arc::new(move |id: Dynamic| {
+///     let id = id.as_int().unwrap_or(0);
+///     product_has_storages(&pool, id).into()
+/// }));
+/// ```
+#[derive(Clone)]
 pub enum OperatorFunction {
     Arg0(fn() -> Dynamic),
     Arg1(fn(Dynamic) -> Dynamic),
@@ -60,6 +74,39 @@ pub enum OperatorFunction {
     Arg4(fn(Dynamic, Dynamic, Dynamic, Dynamic) -> Dynamic),
     Arg5(fn(Dynamic, Dynamic, Dynamic, Dynamic, Dynamic) -> Dynamic),
     Arg6(fn(Dynamic, Dynamic, Dynamic, Dynamic, Dynamic, Dynamic) -> Dynamic),
+    Arg0Closure(Arc<dyn Fn() -> Dynamic + Send + Sync>),
+    Arg1Closure(Arc<dyn Fn(Dynamic) -> Dynamic + Send + Sync>),
+    Arg2Closure(Arc<dyn Fn(Dynamic, Dynamic) -> Dynamic + Send + Sync>),
+    Arg3Closure(
+        Arc<dyn Fn(Dynamic, Dynamic, Dynamic) -> Dynamic + Send + Sync>,
+    ),
+    Arg4Closure(
+        Arc<
+            dyn Fn(Dynamic, Dynamic, Dynamic, Dynamic) -> Dynamic + Send + Sync,
+        >,
+    ),
+    Arg5Closure(
+        Arc<
+            dyn Fn(Dynamic, Dynamic, Dynamic, Dynamic, Dynamic) -> Dynamic
+                + Send
+                + Sync,
+        >,
+    ),
+    #[allow(clippy::type_complexity)]
+    Arg6Closure(
+        Arc<
+            dyn Fn(
+                    Dynamic,
+                    Dynamic,
+                    Dynamic,
+                    Dynamic,
+                    Dynamic,
+                    Dynamic,
+                ) -> Dynamic
+                + Send
+                + Sync,
+        >,
+    ),
 }
 
 pub struct FunctionMap {
