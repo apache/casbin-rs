@@ -75,10 +75,12 @@ mod tests {
     use super::*;
 
     fn is_send<T: Send>() -> bool {
+        let _ = std::marker::PhantomData::<T>;
         true
     }
 
     fn is_sync<T: Sync>() -> bool {
+        let _ = std::marker::PhantomData::<T>;
         true
     }
 

@@ -78,7 +78,7 @@ async fn test_conformance() {
     let mut files: Vec<_> = fs::read_dir(dir.join("cases"))
         .unwrap()
         .map(|entry| entry.unwrap().path())
-        .filter(|path| path.extension().map_or(false, |ext| ext == "json"))
+        .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
         .collect();
     files.sort();
     assert!(!files.is_empty(), "no conformance cases found in {:?}", dir);
