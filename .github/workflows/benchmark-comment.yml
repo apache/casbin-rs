@@ -42,11 +42,38 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const prNumber = parseInt(fs.readFileSync('pr_number.txt', 'utf8').trim());
+            const run = context.payload.workflow_run;
+            const prNumberText = fs.readFileSync('pr_number.txt', 'utf8').trim();
+            if (!/^[1-9][0-9]*$/.test(prNumberText)) {
+              throw new Error('Invalid benchmark PR number');
+            }
+            const prNumber = Number(prNumberText);
+            if (!Number.isSafeInteger(prNumber)) {
+              throw new Error('Invalid benchmark PR number');
+            }
+            // workflow_run.pull_requests is empty for fork PRs, so bind the
+            // artifact to the run by the PR's head SHA and head repository.
+            const prs = run.pull_requests || [];
+            if (prs.length > 0 && !prs.some((p) => p.number === prNumber)) {
+              throw new Error('Benchmark artifact does not belong to this run PR');
+            }
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            if (pr.state !== 'open' || pr.head.sha !== run.head_sha ||
+                pr.head.repo?.id !== run.head_repository?.id) {
+              core.info('Skipping stale benchmark results.');
+              return;
+            }
+            if (fs.statSync('benchmark_result.txt').size > 50000) {
+              throw new Error('Benchmark result exceeds comment limit');
+            }
             const benchResult = fs.readFileSync('benchmark_result.txt', 'utf8');
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: prNumber,
-              body: `## Benchmark Results\n\`\`\`\n${benchResult}\n\`\`\``
+              body: `## Benchmark Results\n<pre>${benchResult.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`
             });
