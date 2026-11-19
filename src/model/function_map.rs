@@ -31,8 +31,40 @@ use rhai::Dynamic;
 
 static MAT_B: Lazy<Regex> = Lazy::new(|| Regex::new(r":[^/]*").unwrap());
 static MAT_P: Lazy<Regex> = Lazy::new(|| Regex::new(r"\{[^/]*\}").unwrap());
+static MAT_COLON_PARAM: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r":[^/]+").unwrap());
+static MAT_BRACE_PARAM: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\{[^/]+?\}").unwrap());
 
-use std::{borrow::Cow, collections::HashMap, sync::Arc};
+const REGEX_CACHE_LIMIT: usize = 1024;
+
+thread_local! {
+    static REGEX_CACHE: RefCell<HashMap<String, Regex>> =
+        RefCell::new(HashMap::new());
+}
+
+use std::{borrow::Cow, cell::RefCell, collections::HashMap, sync::Arc};
+
+// The patterns come from policies, so the same few are compiled over and over.
+// Compiled ones are kept per thread, and the cache is emptied when it is full.
+fn with_regex<R>(
+    pattern: &str,
+    f: impl FnOnce(&Regex) -> R,
+) -> Result<R, regex::Error> {
+    REGEX_CACHE.with(|cache| match cache.try_borrow_mut() {
+        Ok(mut cache) => {
+            if !cache.contains_key(pattern) {
+                let re = Regex::new(pattern)?;
+                if cache.len() >= REGEX_CACHE_LIMIT {
+                    cache.clear();
+                }
+                cache.insert(pattern.to_owned(), re);
+            }
+            Ok(f(&cache[pattern]))
+        }
+        Err(_) => Ok(f(&Regex::new(pattern)?)),
+    })
+}
 
 /// Represents a custom operator function that can be registered with Casbin.
 ///
@@ -309,12 +341,11 @@ pub fn key_get2(key1: &str, key2: &str, path_var: &str) -> String {
         key2.into()
     };
 
-    let re = Regex::new(r":[^/]+").unwrap();
-    let keys: Vec<_> = re.find_iter(&key2).collect();
-    let key2 = re.replace_all(&key2, "([^/]+)").to_string();
-    let key2 = format!("^{}$", key2);
+    let keys: Vec<_> = MAT_COLON_PARAM.find_iter(&key2).collect();
+    let pattern =
+        format!("^{}$", MAT_COLON_PARAM.replace_all(&key2, "([^/]+)"));
 
-    if let Ok(re2) = Regex::new(&key2) {
+    with_regex(&pattern, |re2| {
         if let Some(caps) = re2.captures(key1) {
             for (i, key) in keys.iter().enumerate() {
                 if path_var == &key.as_str()[1..] {
@@ -324,8 +355,9 @@ pub fn key_get2(key1: &str, key2: &str, path_var: &str) -> String {
                 }
             }
         }
-    }
-    "".to_string()
+        "".to_string()
+    })
+    .unwrap_or_default()
 }
 
 /// key_match3 determines whether key1 matches the pattern of key2 (similar to RESTful path), key2 can contain a *  
@@ -352,26 +384,27 @@ pub fn key_get3(key1: &str, key2: &str, path_var: &str) -> String {
         key2.into()
     };
 
-    let re = Regex::new(r"\{[^/]+?\}").unwrap();
-    let keys: Vec<_> = re.find_iter(&key2).collect();
-    let key2 = re.replace_all(&key2, "([^/]+?)").to_string();
-    let key2 = Regex::new(r"\{")
-        .unwrap()
-        .replace_all(&key2, "\\{")
-        .to_string();
-    let key2 = format!("^{}$", key2);
+    let keys: Vec<_> = MAT_BRACE_PARAM.find_iter(&key2).collect();
+    let pattern = format!(
+        "^{}$",
+        MAT_BRACE_PARAM
+            .replace_all(&key2, "([^/]+?)")
+            .replace('{', "\\{")
+    );
 
-    let re2 = Regex::new(&key2).unwrap();
-    if let Some(caps) = re2.captures(key1) {
-        for (i, key) in keys.iter().enumerate() {
-            if path_var == &key.as_str()[1..key.as_str().len() - 1] {
-                return caps
-                    .get(i + 1)
-                    .map_or("".to_string(), |m| m.as_str().to_string());
+    with_regex(&pattern, |re2| {
+        if let Some(caps) = re2.captures(key1) {
+            for (i, key) in keys.iter().enumerate() {
+                if path_var == &key.as_str()[1..key.as_str().len() - 1] {
+                    return caps
+                        .get(i + 1)
+                        .map_or("".to_string(), |m| m.as_str().to_string());
+                }
             }
         }
-    }
-    "".to_string()
+        "".to_string()
+    })
+    .unwrap()
 }
 
 /// KeyMatch4 determines whether key1 matches the pattern of key2 (similar to RESTful path), key2 can contain a *.  
@@ -384,18 +417,20 @@ pub fn key_match4(key1: &str, key2: &str) -> bool {
     let mut key2 = key2.replace("/*", "/.*");
     let mut tokens = Vec::new();
 
-    let re = Regex::new(r"\{[^/]+?\}").unwrap();
-    key2 = re
+    key2 = MAT_BRACE_PARAM
         .replace_all(&key2, |caps: &regex::Captures| {
             tokens.push(caps[0][1..caps[0].len() - 1].to_string());
             "([^/]+)".to_string()
         })
         .to_string();
 
-    let re = match Regex::new(&format!("^{}$", key2)) {
-        Ok(re) => re,
-        Err(_) => return false,
-    };
+    with_regex(&format!("^{}$", key2), |re| {
+        key_match4_captures(re, key1, &tokens)
+    })
+    .unwrap_or(false)
+}
+
+fn key_match4_captures(re: &Regex, key1: &str, tokens: &[String]) -> bool {
     if let Some(caps) = re.captures(key1) {
         let matches: Vec<_> =
             caps.iter().skip(1).map(|m| m.unwrap().as_str()).collect();
@@ -434,16 +469,14 @@ pub fn key_match5(key1: &str, key2: &str) -> bool {
     };
 
     let key2 = key2.replace("/*", "/.*");
-    let key2 = Regex::new(r"(\{[^/]+?\})")
-        .unwrap()
-        .replace_all(&key2, "[^/]+");
+    let key2 = MAT_BRACE_PARAM.replace_all(&key2, "[^/]+");
 
     regex_match(key1, &format!("^{}$", key2))
 }
 
 // regex_match determines whether key1 matches the pattern of key2 in regular expression.
 pub fn regex_match(key1: &str, key2: &str) -> bool {
-    Regex::new(key2).unwrap().is_match(key1)
+    with_regex(key2, |re| re.is_match(key1)).unwrap()
 }
 
 // ip_match determines whether IP address ip1 matches the pattern of IP address ip2, ip2 can be an IP address or a CIDR pattern.

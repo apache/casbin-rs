@@ -534,25 +534,24 @@ impl RoleManager for DefaultRoleManager {
                 continue;
             };
 
-            let mut bfs = matching_bfs::Bfs::new(
+            res = matching_bfs::search(
                 graph,
                 role1,
                 self.max_hierarchy_level,
                 self.role_matching_fn.is_some(),
+                |node| {
+                    let role_name = &graph[node];
+
+                    role_name == name2
+                        || self
+                            .role_matching_fn
+                            .map(|f| f(role_name, name2))
+                            .unwrap_or_default()
+                },
             );
 
-            while let Some(node) = bfs.next(graph) {
-                let role_name = &graph[node];
-
-                if role_name == name2
-                    || self
-                        .role_matching_fn
-                        .map(|f| f(role_name, name2))
-                        .unwrap_or_default()
-                {
-                    res = true;
-                    break;
-                }
+            if res {
+                break;
             }
         }
 
@@ -630,87 +629,106 @@ mod matching_bfs {
     use fixedbitset::FixedBitSet;
     use petgraph::graph::NodeIndex;
     use petgraph::stable_graph::StableDiGraph;
-    use petgraph::visit::{EdgeRef, VisitMap, Visitable};
-    use std::collections::VecDeque;
+    use petgraph::visit::{EdgeRef, NodeIndexable};
+    use std::cell::RefCell;
 
-    #[derive(Clone)]
-    pub(super) struct Bfs {
-        /// The queue of nodes to visit
-        pub queue: VecDeque<NodeIndex<u32>>,
-        /// The map of discovered nodes
-        pub discovered: FixedBitSet,
-        /// Maximum depth
-        pub max_depth: usize,
-        /// Consider `Match` edges
-        pub with_pattern_matching: bool,
-
-        /// Current depth
-        depth: usize,
-        /// Number of elements until next depth is reached
-        depth_elements_remaining: usize,
+    #[derive(Default)]
+    struct Scratch {
+        discovered: FixedBitSet,
+        queue: Vec<NodeIndex<u32>>,
     }
 
-    impl Bfs {
-        /// Create a new **Bfs**, using the graph's visitor map, and put **start**
-        /// in the stack of nodes to visit.
-        pub fn new(
-            graph: &StableDiGraph<String, EdgeVariant>,
-            start: NodeIndex<u32>,
-            max_depth: usize,
-            with_pattern_matching: bool,
-        ) -> Self {
-            let mut discovered = graph.visit_map();
-            discovered.visit(start);
+    thread_local! {
+        static SCRATCH: RefCell<Scratch> = RefCell::new(Scratch::default());
+    }
 
-            let mut queue = VecDeque::new();
-            queue.push_front(start);
-
-            Bfs {
-                queue,
-                discovered,
+    /// Breadth-first search from `start`, calling `visit` on every node it
+    /// reaches, and returning true as soon as `visit` returns true.
+    ///
+    /// The search buffers are kept per thread and only the bits that were set
+    /// are cleared afterwards, so a lookup does not allocate or zero a
+    /// graph-sized bitset each time.
+    pub(super) fn search(
+        graph: &StableDiGraph<String, EdgeVariant>,
+        start: NodeIndex<u32>,
+        max_depth: usize,
+        with_pattern_matching: bool,
+        visit: impl FnMut(NodeIndex<u32>) -> bool,
+    ) -> bool {
+        SCRATCH.with(|scratch| match scratch.try_borrow_mut() {
+            Ok(mut scratch) => run(
+                &mut scratch,
+                graph,
+                start,
                 max_depth,
                 with_pattern_matching,
-                depth: 0,
-                depth_elements_remaining: 1,
+                visit,
+            ),
+            Err(_) => run(
+                &mut Scratch::default(),
+                graph,
+                start,
+                max_depth,
+                with_pattern_matching,
+                visit,
+            ),
+        })
+    }
+
+    fn run(
+        scratch: &mut Scratch,
+        graph: &StableDiGraph<String, EdgeVariant>,
+        start: NodeIndex<u32>,
+        max_depth: usize,
+        with_pattern_matching: bool,
+        mut visit: impl FnMut(NodeIndex<u32>) -> bool,
+    ) -> bool {
+        let Scratch { discovered, queue } = scratch;
+        discovered.grow(graph.node_bound());
+        discovered.insert(start.index());
+        queue.push(start);
+
+        // The depth only increases when the queue runs empty, which is how
+        // max_hierarchy_level has always been applied here.
+        let mut head = 0;
+        let mut depth = 0;
+        let mut found = false;
+        while depth < max_depth && head < queue.len() {
+            let node = queue[head];
+            head += 1;
+            if head == queue.len() {
+                depth += 1;
             }
-        }
 
-        /// Return the next node in the bfs, or **None** if the traversal is done.
-        pub fn next(
-            &mut self,
-            graph: &StableDiGraph<String, EdgeVariant>,
-        ) -> Option<NodeIndex<u32>> {
-            if self.max_depth <= self.depth {
-                return None;
+            if visit(node) {
+                found = true;
+                break;
             }
 
-            if let Some(node) = self.queue.pop_front() {
-                self.update_depth();
-
-                let mut counter = 0;
-                for succ in
-                    bfs_iterator(graph, node, self.with_pattern_matching)
-                {
-                    if self.discovered.visit(succ) {
-                        self.queue.push_back(succ);
-                        counter += 1;
+            if with_pattern_matching {
+                for succ in bfs_iterator(graph, node, true) {
+                    if !discovered.put(succ.index()) {
+                        queue.push(succ);
                     }
                 }
-
-                self.depth_elements_remaining += counter;
-
-                Some(node)
             } else {
-                None
+                for edge in
+                    graph.edges_directed(node, petgraph::Direction::Outgoing)
+                {
+                    if matches!(*edge.weight(), EdgeVariant::Link)
+                        && !discovered.put(edge.target().index())
+                    {
+                        queue.push(edge.target());
+                    }
+                }
             }
         }
 
-        fn update_depth(&mut self) {
-            self.depth_elements_remaining -= 1;
-            if self.depth_elements_remaining == 0 {
-                self.depth += 1
-            }
+        for node in queue.drain(..) {
+            discovered.set(node.index(), false);
         }
+
+        found
     }
 
     pub(super) fn bfs_iterator(
@@ -792,17 +810,25 @@ mod matching_bfs {
                 (rand, libc, EdgeVariant::Link),
             ]);
 
-            let mut bfs = Bfs::new(&deps, pg, 2, false);
-
             let mut nodes = vec![];
-            while let Some(x) = bfs.next(&deps) {
+            search(&deps, pg, 2, false, |x| {
                 nodes.push(x);
-            }
+                false
+            });
 
             assert!(nodes.contains(&fb));
             assert!(nodes.contains(&qc));
             assert!(nodes.contains(&rand));
             assert!(!nodes.contains(&libc));
+
+            // Nothing is left marked as discovered for the next search.
+            let mut again = vec![];
+            search(&deps, pg, 2, false, |x| {
+                again.push(x);
+                false
+            });
+            assert_eq!(nodes, again);
+            assert!(search(&deps, qc, 10, false, |x| x == libc));
         }
     }
 }
