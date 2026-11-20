@@ -200,7 +200,8 @@ impl Enforcer {
 
         let policies = p_ast.get_policy();
         let (policy_len, scope_len) = (policies.len(), scope.len());
-        let eft_index = p_ast.tokens.iter().position(|x| x == "p_eft");
+        let eft_token = format!("{}_eft", p_ast.key);
+        let eft_index = p_ast.tokens.iter().position(|x| x == &eft_token);
 
         let mut eft_stream =
             self.eft.new_stream(&e_ast.value, max(policy_len, 1));
@@ -344,7 +345,8 @@ impl Enforcer {
 
         let policies = p_ast.get_policy();
         let (policy_len, scope_len) = (policies.len(), scope.len());
-        let eft_index = p_ast.tokens.iter().position(|x| x == "p_eft");
+        let eft_token = format!("{}_eft", p_ast.key);
+        let eft_index = p_ast.tokens.iter().position(|x| x == &eft_token);
 
         let mut eft_stream =
             self.eft.new_stream(&e_ast.value, max(policy_len, 1));
@@ -549,15 +551,31 @@ impl Enforcer {
 
     fn sort_policies(&mut self) {
         let model = self.model.get_mut_model();
-        let hierarchy = model
+        let effects: HashMap<String, String> = model
             .get("e")
-            .and_then(|asts| asts.get("e"))
-            .filter(|ast| ast.value == "subjectPriority(p_eft) || deny")
+            .map(|asts| {
+                asts.iter()
+                    .map(|(k, ast)| (k.clone(), ast.value.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let uses_subject_priority = |ptype: &str| {
+            let etype = format!("e{}", ptype.strip_prefix('p').unwrap_or(""));
+            effects
+                .get(&etype)
+                .or_else(|| effects.get("e"))
+                .is_some_and(|v| v == "subjectPriority(p_eft) || deny")
+        };
+        let hierarchy = model
+            .get("p")
+            .filter(|asts| asts.keys().any(|k| uses_subject_priority(k)))
             .and_then(|_| model.get("g").and_then(|asts| asts.get("g")))
             .map(|ast| subject_hierarchy(&ast.policy));
 
         if let Some(asts) = model.get_mut("p") {
             for (ptype, ast) in asts.iter_mut() {
+                let hierarchy =
+                    hierarchy.as_ref().filter(|_| uses_subject_priority(ptype));
                 let dom_index = ast
                     .tokens
                     .iter()
@@ -572,7 +590,7 @@ impl Enforcer {
 
                 let mut policies: Vec<Vec<String>> =
                     ast.policy.drain().collect();
-                if let Some(hierarchy) = &hierarchy {
+                if let Some(hierarchy) = hierarchy {
                     policies.sort_by_key(|rule| {
                         let domain = dom_index
                             .and_then(|i| rule.get(i))
@@ -1206,6 +1224,121 @@ mod tests {
         assert!(e.enforce(("cathy", "/cathy_data", "GET")).unwrap());
         assert!(e.enforce(("cathy", "/cathy_data", "POST")).unwrap());
         assert!(!e.enforce(("cathy", "/cathy_data", "DELETE")).unwrap());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(
+        all(feature = "runtime-async-std", not(target_arch = "wasm32")),
+        async_std::test
+    )]
+    #[cfg_attr(
+        all(feature = "runtime-tokio", not(target_arch = "wasm32")),
+        tokio::test
+    )]
+    async fn test_enforce_with_context_deny_in_non_default_policy_type() {
+        let m = DefaultModel::from_str(
+            r#"
+[request_definition]
+r = sub, obj, act
+r2 = sub, obj, act
+
+[policy_definition]
+p = sub, obj, act, eft
+p2 = sub, obj, act, eft
+
+[policy_effect]
+e = some(where (p.eft == allow)) && !some(where (p.eft == deny))
+e2 = some(where (p.eft == allow)) && !some(where (p.eft == deny))
+
+[matchers]
+m = r.sub == p.sub && r.obj == p.obj && r.act == p.act
+m2 = r2.sub == p2.sub && r2.obj == p2.obj && r2.act == p2.act
+"#,
+        )
+        .await
+        .unwrap();
+        let a = StringAdapter::new(
+            r#"
+p, alice, data1, read, allow
+p, alice, data3, read, deny
+p2, alice, data2, read, deny
+p2, alice, data4, write, allow
+"#,
+        );
+        let e = Enforcer::new(m, a).await.unwrap();
+
+        assert!(e.enforce(("alice", "data1", "read")).unwrap());
+        assert!(!e.enforce(("alice", "data3", "read")).unwrap());
+
+        assert!(!e
+            .enforce_with_context(
+                crate::EnforceContext::new("2"),
+                ("alice", "data2", "read")
+            )
+            .unwrap());
+        assert!(e
+            .enforce_with_context(
+                crate::EnforceContext::new("2"),
+                ("alice", "data4", "write")
+            )
+            .unwrap());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(
+        all(feature = "runtime-async-std", not(target_arch = "wasm32")),
+        async_std::test
+    )]
+    #[cfg_attr(
+        all(feature = "runtime-tokio", not(target_arch = "wasm32")),
+        tokio::test
+    )]
+    async fn test_subject_priority_in_non_default_policy_type() {
+        let m = DefaultModel::from_str(
+            r#"
+[request_definition]
+r = sub, obj, act
+r2 = sub, obj, act
+
+[policy_definition]
+p = sub, obj, act, eft
+p2 = sub, obj, act, eft
+
+[role_definition]
+g = _, _
+
+[policy_effect]
+e = some(where (p.eft == allow))
+e2 = subjectPriority(p.eft) || deny
+
+[matchers]
+m = r.sub == p.sub && r.obj == p.obj && r.act == p.act
+m2 = g(r2.sub, p2.sub) && r2.obj == p2.obj && r2.act == p2.act
+"#,
+        )
+        .await
+        .unwrap();
+        let a = StringAdapter::new(
+            r#"
+p2, admin, data1, read, allow
+p2, alice, data1, read, deny
+g, alice, admin
+"#,
+        );
+        let e = Enforcer::new(m, a).await.unwrap();
+
+        assert!(!e
+            .enforce_with_context(
+                crate::EnforceContext::new("2"),
+                ("alice", "data1", "read")
+            )
+            .unwrap());
+        assert!(e
+            .enforce_with_context(
+                crate::EnforceContext::new("2"),
+                ("admin", "data1", "read")
+            )
+            .unwrap());
     }
 
     #[cfg(not(target_arch = "wasm32"))]
