@@ -16,7 +16,7 @@
 # under the License.
 
 [package]
-include = ["src/**", "tests/**", "examples/**", "benches/**", "Cargo.toml", "Cargo.lock", "README.md", "CUSTOM_FUNCTIONS.md", "casbin-logo.png", "LICENSE", "NOTICE", "DISCLAIMER"]
+include = ["src/**", "tests/**", "examples/**", "benches/**", "Cargo.toml", "Cargo.lock", "README.md", "CUSTOM_FUNCTIONS.md", "LICENSE", "NOTICE", "DISCLAIMER"]
 authors = ["Joey <joey.xf@gmail.com>", "Cheng JIANG <jiang.cheng@vip.163.com>"]
 description = "Apache Casbin (Incubating): An authorization library that supports access control models like ACL, RBAC, ABAC."
 edition = "2021"

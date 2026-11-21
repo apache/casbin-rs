@@ -42,8 +42,6 @@ Versions published before the Apache migration are historical Casbin community r
 
 **News**: still worry about how to write the correct Casbin policy? ``Casbin online editor`` is coming to help! Try it at: https://casbin.org/editor/
 
-![casbin Logo](casbin-logo.png)
-
 **Casbin-RS** is a powerful and efficient open-source access control library for Rust projects. It provides support for enforcing authorization based on various [access control models](https://en.wikipedia.org/wiki/Computer_security_model).
 
 ## All the languages supported by Casbin:
