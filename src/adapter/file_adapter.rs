@@ -16,7 +16,7 @@
 // under the License.
 
 use crate::{
-    adapter::{Adapter, Filter},
+    adapter::{policy_line, Adapter, Filter},
     error::{AdapterError, ModelError},
     model::Model,
     util::parse_csv_line,
@@ -159,7 +159,7 @@ where
 
         for (ptype, ast) in ast_map {
             for rule in ast.get_policy() {
-                writeln!(policies, "{}, {}", ptype, rule.join(", "))
+                writeln!(policies, "{}", policy_line(ptype, rule)?)
                     .map_err(|e| AdapterError(e.into()))?;
             }
         }
@@ -167,7 +167,7 @@ where
         if let Some(ast_map) = m.get_model().get("g") {
             for (ptype, ast) in ast_map {
                 for rule in ast.get_policy() {
-                    writeln!(policies, "{}, {}", ptype, rule.join(", "))
+                    writeln!(policies, "{}", policy_line(ptype, rule)?)
                         .map_err(|e| AdapterError(e.into()))?;
                 }
             }

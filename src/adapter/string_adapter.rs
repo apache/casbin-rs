@@ -30,6 +30,7 @@
 // limitations under the License.
 
 use crate::{
+    adapter::policy_line,
     error::{AdapterError, ModelError},
     util::parse_csv_line,
     Adapter, Filter, Model, Result,
@@ -135,7 +136,7 @@ impl Adapter for StringAdapter {
 
         for (ptype, ast) in ast_map {
             for rule in ast.get_policy() {
-                writeln!(policies, "{}, {}", ptype, rule.join(", "))
+                writeln!(policies, "{}", policy_line(ptype, rule)?)
                     .map_err(|e| AdapterError(e.into()))?;
             }
         }
@@ -143,7 +144,7 @@ impl Adapter for StringAdapter {
         if let Some(ast_map) = m.get_model().get("g") {
             for (ptype, ast) in ast_map {
                 for rule in ast.get_policy() {
-                    writeln!(policies, "{}, {}", ptype, rule.join(", "))
+                    writeln!(policies, "{}", policy_line(ptype, rule)?)
                         .map_err(|e| AdapterError(e.into()))?;
                 }
             }
@@ -303,6 +304,40 @@ mod tests {
             adapter.policy,
             "p, alice, data1, read\np, bob, data2, write\n"
         );
+    }
+
+    #[cfg_attr(
+        all(not(target_arch = "wasm32"), feature = "runtime-async-std"),
+        async_std::test
+    )]
+    #[cfg_attr(
+        all(not(target_arch = "wasm32"), feature = "runtime-tokio"),
+        tokio::test
+    )]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    async fn test_save_policy_rejects_line_breaks() {
+        use crate::Model;
+
+        let policy = "p, alice, data1, read";
+        let mut adapter = StringAdapter::new(policy);
+        let mut model = DefaultModel::from_str(include_str!(
+            "../../examples/rbac_model.conf"
+        ))
+        .await
+        .unwrap();
+
+        adapter.load_policy(&mut model).await.unwrap();
+        model.add_policy(
+            "p",
+            "p",
+            vec![
+                "bob".to_owned(),
+                "data2\np, bob, data1".to_owned(),
+                "read".to_owned(),
+            ],
+        );
+        assert!(adapter.save_policy(&mut model).await.is_err());
+        assert_eq!(adapter.policy, policy);
     }
 
     #[cfg_attr(

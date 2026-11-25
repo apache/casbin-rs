@@ -31,7 +31,27 @@ pub use string_adapter::StringAdapter;
 #[cfg(not(target_arch = "wasm32"))]
 pub use file_adapter::FileAdapter;
 
-use crate::{model::Model, Result};
+use crate::{error::AdapterError, model::Model, Result};
+
+// Writes a policy rule as one line of a policy file. Fields with a line break
+// are rejected, because policy files are read one line at a time.
+pub(crate) fn policy_line(ptype: &str, rule: &[String]) -> Result<String> {
+    if let Some(field) = std::iter::once(ptype)
+        .chain(rule.iter().map(String::as_str))
+        .find(|field| field.contains(['\n', '\r']))
+    {
+        return Err(AdapterError(
+            format!(
+                "invalid policy field {:?}: line breaks are not allowed",
+                field
+            )
+            .into(),
+        )
+        .into());
+    }
+
+    Ok(format!("{}, {}", ptype, rule.join(", ")))
+}
 
 #[derive(Clone)]
 pub struct Filter<'a> {
