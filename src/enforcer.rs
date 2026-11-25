@@ -1046,6 +1046,11 @@ impl CoreApi for Enforcer {
             self.adapter.clear_policy().await?;
         }
         self.model.clear_policy();
+        if self.auto_build_role_links {
+            for rm in self.rm_map.values() {
+                rm.write().clear();
+            }
+        }
 
         #[cfg(any(feature = "logging", feature = "watcher"))]
         self.emit(Event::PolicyChange, EventData::ClearPolicy);
@@ -2343,5 +2348,37 @@ m = r.sub == p.sub && r.act == p.act && isOwner(r.sub, r.obj)
             .unwrap()
             .insert(("alice".to_owned(), "doc2".to_owned()));
         assert!(e.enforce(("alice", "doc2", "read")).unwrap());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(
+        all(feature = "runtime-async-std", not(target_arch = "wasm32")),
+        async_std::test
+    )]
+    #[cfg_attr(
+        all(feature = "runtime-tokio", not(target_arch = "wasm32")),
+        tokio::test
+    )]
+    async fn test_clear_policy_clears_role_links() {
+        let mut e = Enforcer::new(
+            "examples/rbac_model.conf",
+            "examples/rbac_policy.csv",
+        )
+        .await
+        .unwrap();
+        assert!(e.enforce(("alice", "data2", "read")).unwrap());
+
+        e.enable_auto_save(false);
+        e.clear_policy().await.unwrap();
+        assert!(e.get_roles_for_user("alice", None).is_empty());
+
+        e.add_policy(vec![
+            "data2_admin".to_owned(),
+            "data2".to_owned(),
+            "read".to_owned(),
+        ])
+        .await
+        .unwrap();
+        assert!(!e.enforce(("alice", "data2", "read")).unwrap());
     }
 }
