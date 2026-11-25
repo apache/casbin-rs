@@ -1775,6 +1775,39 @@ g, alice, admin
         all(feature = "runtime-tokio", not(target_arch = "wasm32")),
         tokio::test
     )]
+    async fn test_filtered_file_adapter_short_line() {
+        let path = std::env::temp_dir()
+            .join(format!("casbin_short_line_{}.csv", std::process::id()))
+            .to_string_lossy()
+            .into_owned();
+        std::fs::write(&path, "p, alice, data1, read\np, bob\n").unwrap();
+
+        let adapter = FileAdapter::new_filtered_adapter(path.clone());
+        let mut e = Enforcer::new("examples/basic_model.conf", adapter)
+            .await
+            .unwrap();
+        let res = e
+            .load_filtered_policy(Filter {
+                p: vec!["", "data1"],
+                g: vec![],
+            })
+            .await;
+        std::fs::remove_file(&path).unwrap();
+
+        res.unwrap();
+        assert!(e.enforce(("alice", "data1", "read")).unwrap());
+        assert_eq!(e.get_policy().len(), 1);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(
+        all(feature = "runtime-async-std", not(target_arch = "wasm32")),
+        async_std::test
+    )]
+    #[cfg_attr(
+        all(feature = "runtime-tokio", not(target_arch = "wasm32")),
+        tokio::test
+    )]
     async fn test_grouping_role_managers_are_isolated() {
         use crate::RbacApi;
 

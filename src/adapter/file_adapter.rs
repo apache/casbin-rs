@@ -277,14 +277,18 @@ fn load_filtered_policy_line(
         if let Some(ref sec) = key.chars().next().map(|x| x.to_string()) {
             if sec == "p" {
                 for (i, rule) in f.p.iter().enumerate() {
-                    if !rule.is_empty() && rule != &tokens[i + 1] {
+                    if !rule.is_empty()
+                        && tokens.get(i + 1).map(String::as_str) != Some(*rule)
+                    {
                         is_filtered = true;
                     }
                 }
             }
             if sec == "g" {
                 for (i, rule) in f.g.iter().enumerate() {
-                    if !rule.is_empty() && rule != &tokens[i + 1] {
+                    if !rule.is_empty()
+                        && tokens.get(i + 1).map(String::as_str) != Some(*rule)
+                    {
                         is_filtered = true;
                     }
                 }
