@@ -27,7 +27,7 @@ use globset::GlobBuilder;
 use ip_network::IpNetwork;
 use once_cell::sync::Lazy;
 use regex::Regex;
-use rhai::Dynamic;
+use rhai::{Dynamic, Engine, EvalAltResult};
 
 static MAT_B: Lazy<Regex> = Lazy::new(|| Regex::new(r":[^/]*").unwrap());
 static MAT_P: Lazy<Regex> = Lazy::new(|| Regex::new(r"\{[^/]*\}").unwrap());
@@ -317,9 +317,13 @@ pub fn key_get(key1: &str, key2: &str) -> String {
     "".to_string()
 }
 
-/// key_match2 determines whether key1 matches the pattern of key2 (similar to RESTful path), key2 can contain a *  
+/// key_match2 determines whether key1 matches the pattern of key2 (similar to RESTful path), key2 can contain a *
 /// For example, "/foo/bar" matches "/foo/*", "/resource1" matches "/:resource"
 pub fn key_match2(key1: &str, key2: &str) -> bool {
+    try_key_match2(key1, key2).unwrap_or(false)
+}
+
+fn try_key_match2(key1: &str, key2: &str) -> Result<bool, String> {
     let mut key2: Cow<str> = if key2.contains("/*") {
         key2.replace("/*", "/.*").into()
     } else {
@@ -328,13 +332,21 @@ pub fn key_match2(key1: &str, key2: &str) -> bool {
 
     key2 = MAT_B.replace_all(&key2, "[^/]+").to_string().into();
 
-    regex_match(key1, &format!("^{}$", key2))
+    try_regex_match(key1, &format!("^{}$", key2))
 }
 
-/// key_get2 returns value matched pattern  
-/// For example, "/resource1" matches "/:resource"  
+/// key_get2 returns value matched pattern
+/// For example, "/resource1" matches "/:resource"
 /// if the pathVar == "resource", then "resource1" will be returned.
 pub fn key_get2(key1: &str, key2: &str, path_var: &str) -> String {
+    try_key_get2(key1, key2, path_var).unwrap_or_default()
+}
+
+fn try_key_get2(
+    key1: &str,
+    key2: &str,
+    path_var: &str,
+) -> Result<String, String> {
     let key2: Cow<str> = if key2.contains("/*") {
         key2.replace("/*", "/.*").into()
     } else {
@@ -352,7 +364,7 @@ pub fn key_get2(key1: &str, key2: &str, path_var: &str) -> String {
     with_regex(&format!("^{}$", pattern), |re| {
         key_get_captures(re, key1, &tokens, path_var)
     })
-    .unwrap_or_default()
+    .map_err(|e| e.to_string())
 }
 
 // The pattern variables are put into named groups, because key2 can carry
@@ -379,9 +391,13 @@ fn key_get_captures(
         .map_or_else(String::new, |m| m.as_str().to_string())
 }
 
-/// key_match3 determines whether key1 matches the pattern of key2 (similar to RESTful path), key2 can contain a *  
+/// key_match3 determines whether key1 matches the pattern of key2 (similar to RESTful path), key2 can contain a *
 /// For example, "/foo/bar" matches "/foo/*", "/resource1" matches "/{resource}"
 pub fn key_match3(key1: &str, key2: &str) -> bool {
+    try_key_match3(key1, key2).unwrap_or(false)
+}
+
+fn try_key_match3(key1: &str, key2: &str) -> Result<bool, String> {
     let mut key2: Cow<str> = if key2.contains("/*") {
         key2.replace("/*", "/.*").into()
     } else {
@@ -390,13 +406,21 @@ pub fn key_match3(key1: &str, key2: &str) -> bool {
 
     key2 = MAT_P.replace_all(&key2, "[^/]+").to_string().into();
 
-    regex_match(key1, &format!("^{}$", key2))
+    try_regex_match(key1, &format!("^{}$", key2))
 }
 
-/// key_get3 returns value matched pattern  
-/// For example, "project/proj_project1_admin/" matches "project/proj_{project}_admin/"  
+/// key_get3 returns value matched pattern
+/// For example, "project/proj_project1_admin/" matches "project/proj_{project}_admin/"
 /// if the pathVar == "project", then "project1" will be returned.
 pub fn key_get3(key1: &str, key2: &str, path_var: &str) -> String {
+    try_key_get3(key1, key2, path_var).unwrap_or_default()
+}
+
+fn try_key_get3(
+    key1: &str,
+    key2: &str,
+    path_var: &str,
+) -> Result<String, String> {
     let key2: Cow<str> = if key2.contains("/*") {
         key2.replace("/*", "/.*").into()
     } else {
@@ -415,16 +439,20 @@ pub fn key_get3(key1: &str, key2: &str, path_var: &str) -> String {
     with_regex(&format!("^{}$", pattern), |re| {
         key_get_captures(re, key1, &tokens, path_var)
     })
-    .unwrap_or_default()
+    .map_err(|e| e.to_string())
 }
 
-/// KeyMatch4 determines whether key1 matches the pattern of key2 (similar to RESTful path), key2 can contain a *.  
-/// Besides what KeyMatch3 does, KeyMatch4 can also match repeated patterns:  
+/// KeyMatch4 determines whether key1 matches the pattern of key2 (similar to RESTful path), key2 can contain a *.
+/// Besides what KeyMatch3 does, KeyMatch4 can also match repeated patterns:
 ///   - "/parent/123/child/123" matches "/parent/{id}/child/{id}"
 ///   - "/parent/123/child/456" does not match "/parent/{id}/child/{id}"
 ///
 /// But KeyMatch3 will match both.
 pub fn key_match4(key1: &str, key2: &str) -> bool {
+    try_key_match4(key1, key2).unwrap_or(false)
+}
+
+fn try_key_match4(key1: &str, key2: &str) -> Result<bool, String> {
     let key2 = key2.replace("/*", "/.*");
     let mut tokens = Vec::new();
 
@@ -437,7 +465,7 @@ pub fn key_match4(key1: &str, key2: &str) -> bool {
     with_regex(&format!("^{}$", key2), |re| {
         key_match4_captures(re, key1, &tokens)
     })
-    .unwrap_or(false)
+    .map_err(|e| e.to_string())
 }
 
 fn key_match4_captures(re: &Regex, key1: &str, tokens: &[String]) -> bool {
@@ -456,12 +484,16 @@ fn key_match4_captures(re: &Regex, key1: &str, tokens: &[String]) -> bool {
     true
 }
 
-/// KeyMatch5 determines whether key1 matches the pattern of key2 (similar to RESTful path), key2 can contain a *  
-/// For example,  
+/// KeyMatch5 determines whether key1 matches the pattern of key2 (similar to RESTful path), key2 can contain a *
+/// For example,
 ///   - "/foo/bar?status=1&type=2" matches "/foo/bar"
 ///   - "/parent/child1" and "/parent/child1" matches "/parent/*"
 ///   - "/parent/child1?status=1" matches "/parent/*".
 pub fn key_match5(key1: &str, key2: &str) -> bool {
+    try_key_match5(key1, key2).unwrap_or(false)
+}
+
+fn try_key_match5(key1: &str, key2: &str) -> Result<bool, String> {
     let key1 = if let Some(i) = key1.find('?') {
         &key1[..i]
     } else {
@@ -471,59 +503,127 @@ pub fn key_match5(key1: &str, key2: &str) -> bool {
     let key2 = key2.replace("/*", "/.*");
     let key2 = MAT_BRACE_PARAM.replace_all(&key2, "[^/]+");
 
-    regex_match(key1, &format!("^{}$", key2))
+    try_regex_match(key1, &format!("^{}$", key2))
 }
 
 // regex_match determines whether key1 matches the pattern of key2 in regular expression.
+// An invalid pattern matches nothing; in a matcher it is reported as an error.
 pub fn regex_match(key1: &str, key2: &str) -> bool {
-    with_regex(key2, |re| re.is_match(key1)).unwrap()
+    try_regex_match(key1, key2).unwrap_or(false)
+}
+
+fn try_regex_match(key1: &str, key2: &str) -> Result<bool, String> {
+    with_regex(key2, |re| re.is_match(key1)).map_err(|e| e.to_string())
 }
 
 // ip_match determines whether IP address ip1 matches the pattern of IP address ip2, ip2 can be an IP address or a CIDR pattern.
 // For example, "192.168.2.123" matches "192.168.2.0/24"
+// An invalid argument matches nothing; in a matcher it is reported as an error.
 #[cfg(feature = "ip")]
 pub fn ip_match(key1: &str, key2: &str) -> bool {
+    try_ip_match(key1, key2).unwrap_or(false)
+}
+
+#[cfg(feature = "ip")]
+fn try_ip_match(key1: &str, key2: &str) -> Result<bool, String> {
+    let ip_addr1 = key1
+        .parse::<IpAddr>()
+        .map_err(|_| format!("{:?} is not an IP address", key1))?;
+    let invalid_ip2 =
+        || format!("{:?} is neither an IP address nor a CIDR", key2);
+
     let key2_split = key2.splitn(2, '/').collect::<Vec<&str>>();
-    let ip_addr2 = key2_split[0];
+    let ip_addr2 =
+        key2_split[0].parse::<IpAddr>().map_err(|_| invalid_ip2())?;
 
-    if let (Ok(ip_addr1), Ok(ip_addr2)) =
-        (key1.parse::<IpAddr>(), ip_addr2.parse::<IpAddr>())
-    {
-        if key2_split.len() == 2 {
-            match key2_split[1].parse::<u8>() {
-                Ok(ip_netmask) => {
-                    match IpNetwork::new_truncate(ip_addr2, ip_netmask) {
-                        Ok(ip_network) => ip_network.contains(ip_addr1),
-                        Err(err) => panic!("invalid ip network {}", err),
-                    }
-                }
-                _ => panic!("invalid netmask {}", key2_split[1]),
-            }
-        } else {
-            if let (IpAddr::V4(ip_addr1_new), IpAddr::V6(ip_addr2_new)) =
-                (ip_addr1, ip_addr2)
-            {
-                if let Some(ip_addr2_new) = ip_addr2_new.to_ipv4() {
-                    return ip_addr2_new == ip_addr1_new;
-                }
-            }
-
-            ip_addr1 == ip_addr2
-        }
-    } else {
-        panic!("invalid argument {} {}", key1, key2)
+    if key2_split.len() == 2 {
+        let ip_netmask =
+            key2_split[1].parse::<u8>().map_err(|_| invalid_ip2())?;
+        let ip_network = IpNetwork::new_truncate(ip_addr2, ip_netmask)
+            .map_err(|_| invalid_ip2())?;
+        return Ok(ip_network.contains(ip_addr1));
     }
+
+    if let (IpAddr::V4(ip_addr1_new), IpAddr::V6(ip_addr2_new)) =
+        (ip_addr1, ip_addr2)
+    {
+        if let Some(ip_addr2_new) = ip_addr2_new.to_ipv4() {
+            return Ok(ip_addr2_new == ip_addr1_new);
+        }
+    }
+
+    Ok(ip_addr1 == ip_addr2)
 }
 
 // glob_match determines whether key1 matches the pattern of key2 using glob pattern
+// An invalid pattern matches nothing; in a matcher it is reported as an error.
 #[cfg(feature = "glob")]
 pub fn glob_match(key1: &str, key2: &str) -> bool {
-    GlobBuilder::new(key2)
+    try_glob_match(key1, key2).unwrap_or(false)
+}
+
+#[cfg(feature = "glob")]
+fn try_glob_match(key1: &str, key2: &str) -> Result<bool, String> {
+    Ok(GlobBuilder::new(key2)
         .literal_separator(true)
         .build()
-        .unwrap()
+        .map_err(|e| e.to_string())?
         .compile_matcher()
-        .is_match(key1)
+        .is_match(key1))
+}
+
+// Registers the built-in matcher functions that take a pattern so that an
+// invalid pattern fails the enforcement with an error instead of matching
+// nothing.
+pub(crate) fn register_fallible_functions(engine: &mut Engine) {
+    register_fallible2(engine, "keyMatch2", try_key_match2);
+    register_fallible3(engine, "keyGet2", try_key_get2);
+    register_fallible2(engine, "keyMatch3", try_key_match3);
+    register_fallible3(engine, "keyGet3", try_key_get3);
+    register_fallible2(engine, "keyMatch4", try_key_match4);
+    register_fallible2(engine, "keyMatch5", try_key_match5);
+    register_fallible2(engine, "regexMatch", try_regex_match);
+    #[cfg(feature = "glob")]
+    register_fallible2(engine, "globMatch", try_glob_match);
+    #[cfg(feature = "ip")]
+    register_fallible2(engine, "ipMatch", try_ip_match);
+}
+
+fn register_fallible2<T: Into<Dynamic> + 'static>(
+    engine: &mut Engine,
+    name: &'static str,
+    f: fn(&str, &str) -> Result<T, String>,
+) {
+    engine.register_fn(
+        name,
+        move |a: Dynamic, b: Dynamic| -> Result<Dynamic, Box<EvalAltResult>> {
+            f(&dynamic_to_str(&a), &dynamic_to_str(&b))
+                .map(Into::into)
+                .map_err(|e| format!("{}: {}", name, e).into())
+        },
+    );
+}
+
+fn register_fallible3<T: Into<Dynamic> + 'static>(
+    engine: &mut Engine,
+    name: &'static str,
+    f: fn(&str, &str, &str) -> Result<T, String>,
+) {
+    engine.register_fn(
+        name,
+        move |a: Dynamic,
+              b: Dynamic,
+              c: Dynamic|
+              -> Result<Dynamic, Box<EvalAltResult>> {
+            f(
+                &dynamic_to_str(&a),
+                &dynamic_to_str(&b),
+                &dynamic_to_str(&c),
+            )
+            .map(Into::into)
+            .map_err(|e| format!("{}: {}", name, e).into())
+        },
+    );
 }
 
 #[cfg(test)]
@@ -833,16 +933,27 @@ mod tests {
 
     #[cfg(feature = "ip")]
     #[test]
-    #[should_panic]
-    fn test_ip_match_panic_1() {
-        assert!(ip_match("I am alice", "127.0.0.1"));
+    fn test_ip_match_invalid_argument() {
+        assert!(!ip_match("I am alice", "127.0.0.1"));
+        assert!(!ip_match("127.0.0.1", "I am alice"));
+        assert!(!ip_match("127.0.0.1", "127.0.0.0/99"));
+        assert!(try_ip_match("I am alice", "127.0.0.1").is_err());
+        assert!(try_ip_match("127.0.0.1", "I am alice").is_err());
+        assert!(try_ip_match("127.0.0.1", "127.0.0.0/99").is_err());
     }
 
-    #[cfg(feature = "ip")]
     #[test]
-    #[should_panic]
-    fn test_ip_match_panic_2() {
-        assert!(ip_match("127.0.0.1", "I am alice"));
+    fn test_invalid_pattern() {
+        assert!(!regex_match("foo", "foo("));
+        assert!(!key_match2("/foo/(", "/foo/("));
+        assert!(!key_match3("/foo/(", "/foo/("));
+        assert!(!key_match4("/foo/(", "/foo/("));
+        assert!(!key_match5("/foo/(", "/foo/("));
+        assert_eq!(key_get2("/foo/(", "/foo/(/:id", "id"), "");
+        assert_eq!(key_get3("/foo/(", "/foo/(/{id}", "id"), "");
+        assert!(try_regex_match("foo", "foo(").is_err());
+        assert!(try_key_match2("/foo/(", "/foo/(").is_err());
+        assert!(try_key_get3("/foo/(", "/foo/(/{id}", "id").is_err());
     }
 
     #[cfg(feature = "glob")]
@@ -851,5 +962,7 @@ mod tests {
         assert!(glob_match("/abc/123", "/abc/*"));
         assert!(!glob_match("/abc/123/456", "/abc/*"));
         assert!(glob_match("/abc/123/456", "/abc/**"));
+        assert!(!glob_match("/abc/[", "/abc/["));
+        assert!(try_glob_match("/abc/[", "/abc/[").is_err());
     }
 }

@@ -24,7 +24,10 @@ use crate::{
     error::{ModelError, PolicyError, RequestError},
     get_or_err, get_or_err_with_context,
     management_api::MgmtApi,
-    model::{key_match, FunctionMap, Model, OperatorFunction},
+    model::{
+        function_map::register_fallible_functions, key_match, FunctionMap,
+        Model, OperatorFunction,
+    },
     rbac::{DefaultRoleManager, RoleManager},
     register_g_function,
     util::{escape_assertion, escape_eval},
@@ -645,6 +648,7 @@ impl CoreApi for Enforcer {
         for (key, func) in fm.get_functions() {
             Self::register_function(&mut engine, key, func.clone());
         }
+        register_fallible_functions(&mut engine);
 
         let mut e = Self {
             model,
@@ -2380,5 +2384,83 @@ m = r.sub == p.sub && r.act == p.act && isOwner(r.sub, r.obj)
         .await
         .unwrap();
         assert!(!e.enforce(("alice", "data2", "read")).unwrap());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(
+        all(feature = "runtime-async-std", not(target_arch = "wasm32")),
+        async_std::test
+    )]
+    #[cfg_attr(
+        all(feature = "runtime-tokio", not(target_arch = "wasm32")),
+        tokio::test
+    )]
+    async fn test_invalid_pattern_in_matcher_returns_error() {
+        use crate::prelude::*;
+
+        let m = DefaultModel::from_str(
+            r#"
+[request_definition]
+r = sub, obj, act
+
+[policy_definition]
+p = sub, obj, act
+
+[policy_effect]
+e = some(where (p.eft == allow))
+
+[matchers]
+m = r.sub == p.sub && regexMatch(r.obj, p.obj) && keyMatch2(r.act, p.act)
+"#,
+        )
+        .await
+        .unwrap();
+
+        let mut e = Enforcer::new(m, MemoryAdapter::default()).await.unwrap();
+        e.add_policy(vec![
+            "alice".to_owned(),
+            "data(".to_owned(),
+            "read".to_owned(),
+        ])
+        .await
+        .unwrap();
+        assert!(e.enforce(("alice", "data1", "read")).is_err());
+
+        e.remove_policy(vec![
+            "alice".to_owned(),
+            "data(".to_owned(),
+            "read".to_owned(),
+        ])
+        .await
+        .unwrap();
+        e.add_policy(vec![
+            "alice".to_owned(),
+            "data1".to_owned(),
+            "/read/[".to_owned(),
+        ])
+        .await
+        .unwrap();
+        assert!(e.enforce(("alice", "data1", "/read/[")).is_err());
+    }
+
+    #[cfg(all(feature = "ip", not(target_arch = "wasm32")))]
+    #[cfg_attr(
+        all(feature = "runtime-async-std", not(target_arch = "wasm32")),
+        async_std::test
+    )]
+    #[cfg_attr(
+        all(feature = "runtime-tokio", not(target_arch = "wasm32")),
+        tokio::test
+    )]
+    async fn test_invalid_ip_in_matcher_returns_error() {
+        let e = Enforcer::new(
+            "examples/ipmatch_model.conf",
+            "examples/ipmatch_policy.csv",
+        )
+        .await
+        .unwrap();
+
+        assert!(e.enforce(("192.168.2.123", "data1", "read")).unwrap());
+        assert!(e.enforce(("I am alice", "data1", "read")).is_err());
     }
 }
