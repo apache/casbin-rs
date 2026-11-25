@@ -33,24 +33,46 @@ pub use file_adapter::FileAdapter;
 
 use crate::{error::AdapterError, model::Model, Result};
 
-// Writes a policy rule as one line of a policy file. Fields with a line break
-// are rejected, because policy files are read one line at a time.
+// Writes a policy rule as one line of a policy file, quoting fields the way
+// CSV does so that parse_csv_line reads every field back unchanged. Fields
+// with a line break are rejected, because policy files are read one line at a
+// time.
 pub(crate) fn policy_line(ptype: &str, rule: &[String]) -> Result<String> {
-    if let Some(field) = std::iter::once(ptype)
-        .chain(rule.iter().map(String::as_str))
-        .find(|field| field.contains(['\n', '\r']))
-    {
-        return Err(AdapterError(
-            format!(
-                "invalid policy field {:?}: line breaks are not allowed",
-                field
+    let mut fields = Vec::with_capacity(rule.len() + 1);
+    for field in std::iter::once(ptype).chain(rule.iter().map(String::as_str)) {
+        if field.contains(['\n', '\r']) {
+            return Err(AdapterError(
+                format!(
+                    "invalid policy field {:?}: line breaks are not allowed",
+                    field
+                )
+                .into(),
             )
-            .into(),
-        )
-        .into());
+            .into());
+        }
+
+        if field_needs_quotes(field) {
+            fields.push(format!("\"{}\"", field.replace('"', "\"\"")));
+        } else {
+            fields.push(field.to_owned());
+        }
     }
 
-    Ok(format!("{}, {}", ptype, rule.join(", ")))
+    Ok(fields.join(", "))
+}
+
+// The fields encoding/csv quotes, plus those ending in whitespace, which
+// parse_csv_line would otherwise trim.
+fn field_needs_quotes(field: &str) -> bool {
+    if field.is_empty() {
+        return false;
+    }
+
+    field == r"\." || field.contains([',', '"']) || {
+        let first = field.chars().next().unwrap_or_default();
+        let last = field.chars().next_back().unwrap_or_default();
+        first.is_whitespace() || last.is_whitespace()
+    }
 }
 
 #[derive(Clone)]

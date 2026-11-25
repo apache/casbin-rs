@@ -349,6 +349,55 @@ mod tests {
         tokio::test
     )]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    async fn test_save_policy_quotes_fields() {
+        use crate::Model;
+
+        let rules = vec![
+            vec![
+                "alice, data".to_owned(),
+                "data1".to_owned(),
+                "read".to_owned(),
+            ],
+            vec![
+                r#"say "hi", bob"#.to_owned(),
+                " data2 ".to_owned(),
+                "".to_owned(),
+            ],
+            vec![
+                r#"r.sub.Status == "ACTIVE""#.to_owned(),
+                "/data1".to_owned(),
+                "read".to_owned(),
+            ],
+        ];
+        let conf = include_str!("../../examples/rbac_model.conf");
+
+        let mut model = DefaultModel::from_str(conf).await.unwrap();
+        model.add_policies("p", "p", rules.clone());
+        let mut adapter = StringAdapter::new("");
+        adapter.save_policy(&mut model).await.unwrap();
+        assert_eq!(
+            adapter.policy,
+            concat!(
+                "p, \"alice, data\", data1, read\n",
+                "p, \"say \"\"hi\"\", bob\", \" data2 \", \n",
+                "p, \"r.sub.Status == \"\"ACTIVE\"\"\", /data1, read\n",
+            )
+        );
+
+        let mut loaded = DefaultModel::from_str(conf).await.unwrap();
+        adapter.load_policy(&mut loaded).await.unwrap();
+        assert_eq!(loaded.get_policy("p", "p"), rules);
+    }
+
+    #[cfg_attr(
+        all(not(target_arch = "wasm32"), feature = "runtime-async-std"),
+        async_std::test
+    )]
+    #[cfg_attr(
+        all(not(target_arch = "wasm32"), feature = "runtime-tokio"),
+        tokio::test
+    )]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     async fn test_clear_policy() {
         let policy = "p, alice, data1, read\np, bob, data2, write";
         let mut adapter = StringAdapter::new(policy);

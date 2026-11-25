@@ -1775,6 +1775,48 @@ g, alice, admin
         all(feature = "runtime-tokio", not(target_arch = "wasm32")),
         tokio::test
     )]
+    async fn test_file_adapter_round_trips_quoted_fields() {
+        let path = std::env::temp_dir()
+            .join(format!("casbin_quoted_{}.csv", std::process::id()))
+            .to_string_lossy()
+            .into_owned();
+        std::fs::write(&path, "").unwrap();
+
+        let mut e = Enforcer::new(
+            "examples/basic_model.conf",
+            FileAdapter::new(path.clone()),
+        )
+        .await
+        .unwrap();
+        let rule = vec![
+            "alice, data".to_owned(),
+            r#"data "1""#.to_owned(),
+            "read".to_owned(),
+        ];
+        e.add_policy(rule.clone()).await.unwrap();
+        let saved = e.save_policy().await;
+        let loaded = match saved {
+            Ok(()) => e.load_policy().await,
+            Err(err) => Err(err),
+        };
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+
+        loaded.unwrap();
+        assert_eq!(text, r#"p, "alice, data", "data ""1""", read"#);
+        assert_eq!(e.get_policy(), vec![rule]);
+        assert!(e.enforce(("alice, data", r#"data "1""#, "read")).unwrap());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(
+        all(feature = "runtime-async-std", not(target_arch = "wasm32")),
+        async_std::test
+    )]
+    #[cfg_attr(
+        all(feature = "runtime-tokio", not(target_arch = "wasm32")),
+        tokio::test
+    )]
     async fn test_filtered_file_adapter_short_line() {
         let path = std::env::temp_dir()
             .join(format!("casbin_short_line_{}.csv", std::process::id()))

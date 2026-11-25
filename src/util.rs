@@ -31,7 +31,6 @@ static ESC_A: Lazy<Regex> = Lazy::new(|| regex!(r"\b(r\d*|p\d*)\."));
 static ESC_G: Lazy<Regex> = Lazy::new(|| {
     regex!(r"\b(g\d*)\(((?:\s*[r|p]\d*\.\w+\s*,\s*){1,2}\s*[r|p]\d*\.\w+\s*)\)")
 });
-static ESC_C: Lazy<Regex> = Lazy::new(|| regex!(r#"(\s*"[^"]*"?|\s*[^,]*)"#));
 static ESC_IN: Lazy<Regex> = Lazy::new(|| regex!(r"\bin\s*\(([^()]*)\)"));
 pub(crate) static ESC_E: Lazy<Regex> =
     Lazy::new(|| regex!(r"\beval\(([^)]*)\)"));
@@ -125,19 +124,63 @@ pub fn parse_csv_line<'a, S: AsRef<str> + 'a>(line: S) -> Option<Vec<String>> {
     }
 
     let mut res = vec![];
-    for col in ESC_C.find_iter(line).map(|m| m.as_str().trim()) {
-        res.push({
-            if col.len() >= 2 && col.starts_with('"') && col.ends_with('"') {
-                col[1..col.len() - 1].to_owned()
-            } else {
-                col.to_owned()
-            }
-        })
+    let mut rest = Some(line);
+    while let Some(field) = rest {
+        let field = field.trim_start();
+        let (value, next) = match parse_quoted_field(field) {
+            QuotedField::Value(value, next) => (value, next),
+            QuotedField::Unclosed => (field.trim_end().to_owned(), None),
+            QuotedField::Not => match field.split_once(',') {
+                Some((value, next)) => {
+                    (value.trim_end().to_owned(), Some(next))
+                }
+                None => (field.trim_end().to_owned(), None),
+            },
+        };
+        res.push(value);
+        rest = next;
     }
-    if res.is_empty() {
-        None
-    } else {
-        Some(res)
+    Some(res)
+}
+
+enum QuotedField<'a> {
+    Value(String, Option<&'a str>),
+    Unclosed,
+    Not,
+}
+
+// Reads a field quoted the way CSV does, with "" standing for one quote, and
+// returns the rest of the line after the comma that ends it. A field that
+// does not start with a quote, or has text after its closing quote, is read
+// as it is.
+fn parse_quoted_field(field: &str) -> QuotedField<'_> {
+    let body = match field.strip_prefix('"') {
+        Some(body) => body,
+        None => return QuotedField::Not,
+    };
+
+    let mut value = String::new();
+    let mut start = 0;
+    loop {
+        let end = match body[start..].find('"') {
+            Some(i) => start + i,
+            None => return QuotedField::Unclosed,
+        };
+        value.push_str(&body[start..end]);
+        if body[end + 1..].starts_with('"') {
+            value.push('"');
+            start = end + 2;
+            continue;
+        }
+
+        let after = body[end + 1..].trim_start();
+        return if after.is_empty() {
+            QuotedField::Value(value, None)
+        } else if let Some(next) = after.strip_prefix(',') {
+            QuotedField::Value(value, Some(next))
+        } else {
+            QuotedField::Not
+        };
     }
 }
 
@@ -272,6 +315,20 @@ mod tests {
     #[test]
     fn test_csv_parse_9() {
         assert_eq!(parse_csv_line("\"\""), Some(vec!["".to_owned()]));
+    }
+
+    #[test]
+    fn test_csv_parse_quoted() {
+        assert_eq!(
+            parse_csv_line(r#"p, "say ""hi"", bob", " data ", , x"#),
+            Some(vec![
+                "p".to_owned(),
+                r#"say "hi", bob"#.to_owned(),
+                " data ".to_owned(),
+                "".to_owned(),
+                "x".to_owned(),
+            ])
+        );
     }
 
     #[test]
