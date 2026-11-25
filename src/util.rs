@@ -47,14 +47,7 @@ pub fn escape_assertion(s: &str) -> String {
             i += 1;
             continue;
         }
-        let mut end = i + 1;
-        while end < bytes.len() && bytes[end] != quote {
-            if bytes[end] == b'\\' {
-                end += 1;
-            }
-            end += 1;
-        }
-        let end = (end + 1).min(bytes.len());
+        let end = string_literal_end(bytes, i);
         res.push_str(&ESC_A.replace_all(&s[start..i], "${1}_"));
         if quote == b'\'' && end - i >= 2 && bytes[end - 1] == quote {
             res.push('"');
@@ -81,8 +74,38 @@ pub fn escape_in_operator(m: &str) -> Cow<'_, str> {
     ESC_IN.replace_all(m, "in [${1}]")
 }
 
+// Returns the index just past the string literal that opens at bytes[i], or
+// the end of the input when it is not closed.
+fn string_literal_end(bytes: &[u8], i: usize) -> usize {
+    let quote = bytes[i];
+    let mut end = i + 1;
+    while end < bytes.len() && bytes[end] != quote {
+        if bytes[end] == b'\\' {
+            end += 1;
+        }
+        end += 1;
+    }
+    (end + 1).min(bytes.len())
+}
+
+// Returns the index of the first comment marker outside string literals.
+pub(crate) fn find_comment(s: &str, markers: &[u8]) -> Option<usize> {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'"' || bytes[i] == b'\'' {
+            i = string_literal_end(bytes, i);
+        } else if markers.contains(&bytes[i]) {
+            return Some(i);
+        } else {
+            i += 1;
+        }
+    }
+    None
+}
+
 pub fn remove_comment(s: &str) -> String {
-    let s = if let Some(idx) = s.find('#') {
+    let s = if let Some(idx) = find_comment(s, b"#") {
         &s[..idx]
     } else {
         s
@@ -130,6 +153,18 @@ mod tests {
             remove_comment(
                 r#"g(r.sub, p.sub) && r.obj == p.obj && r.act == p.act || r.sub == "root" # root is the super user"#
             )
+        );
+    }
+
+    #[test]
+    fn test_remove_comment_in_string_literal() {
+        assert_eq!(
+            r#"r.obj == "data#1" && r.act == 'a#b'"#,
+            remove_comment(r#"r.obj == "data#1" && r.act == 'a#b' # note"#)
+        );
+        assert_eq!(
+            r##"r.obj == "a\"#b""##,
+            remove_comment(r##"r.obj == "a\"#b" # note"##)
         );
     }
 

@@ -652,6 +652,46 @@ m = regexMatch(r.act, p.act) && r.sub == p.sub && r.obj == p.obj
         all(feature = "runtime-tokio", not(target_arch = "wasm32")),
         tokio::test
     )]
+    async fn test_comment_marker_in_matcher_string() {
+        let m = DefaultModel::from_str(
+            r#"
+[request_definition]
+r = sub, obj, act
+
+[policy_definition]
+p = sub, obj, act
+
+[policy_effect]
+e = some(where (p.eft == allow))
+
+[matchers]
+m = r.sub == p.sub && r.obj == p.obj && r.act == p.act && r.obj != "data#2;x" # note
+"#,
+        )
+        .await
+        .unwrap();
+
+        let mut e = Enforcer::new(m, MemoryAdapter::default()).await.unwrap();
+        e.add_policy(vec![
+            "alice".to_owned(),
+            "data#2;x".to_owned(),
+            "read".to_owned(),
+        ])
+        .await
+        .unwrap();
+
+        assert!(!e.enforce(("alice", "data#2;x", "read")).unwrap());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(
+        all(feature = "runtime-async-std", not(target_arch = "wasm32")),
+        async_std::test
+    )]
+    #[cfg_attr(
+        all(feature = "runtime-tokio", not(target_arch = "wasm32")),
+        tokio::test
+    )]
     async fn test_basic_model_with_root() {
         let m = DefaultModel::from_file("examples/basic_with_root_model.conf")
             .await

@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::Result;
+use crate::{util::find_comment, Result};
 
 #[cfg(feature = "runtime-async-std")]
 use async_std::{
@@ -49,9 +49,11 @@ fn remove_inline_comment(line: &str) -> String {
             Some(body) => (body, true),
             None => (line, false),
         };
-    let body = match body.find(|c| {
-        DEFAULT_COMMENT.contains(c) || DEFAULT_COMMENT_SEM.contains(c)
-    }) {
+    let markers = [
+        DEFAULT_COMMENT.as_bytes()[0],
+        DEFAULT_COMMENT_SEM.as_bytes()[0],
+    ];
+    let body = match find_comment(body, &markers) {
         Some(idx) => &body[..idx],
         None => body,
     }
@@ -359,6 +361,7 @@ mod tests {
                 mysql.master.user = root
                 mysql.master.pass = 89dds)2$#d
                 mysql.master.db = act
+                mysql.master.note = "a#b;c" 'd#e' # note
 
                 ; math config
                 [math]
@@ -368,6 +371,10 @@ mod tests {
 
         let mut config = Config::from_str(text).await.unwrap();
 
+        assert_eq!(
+            Some(r#""a#b;c" 'd#e'"#.to_owned()),
+            config.get_string("mysql::mysql.master.note")
+        );
         assert_eq!(Some(true), config.get_bool("debug"));
         assert_eq!(Some(64), config.get_int("math::math.i64"));
         assert_eq!(Some(64.1), config.get_float("math::math.f64"));
