@@ -341,23 +341,42 @@ pub fn key_get2(key1: &str, key2: &str, path_var: &str) -> String {
         key2.into()
     };
 
-    let keys: Vec<_> = MAT_COLON_PARAM.find_iter(&key2).collect();
+    let mut tokens = Vec::new();
     let pattern =
-        format!("^{}$", MAT_COLON_PARAM.replace_all(&key2, "([^/]+)"));
+        MAT_COLON_PARAM.replace_all(&key2, |caps: &regex::Captures| {
+            let group = token_group(tokens.len(), "[^/]+");
+            tokens.push(caps[0][1..].to_string());
+            group
+        });
 
-    with_regex(&pattern, |re2| {
-        if let Some(caps) = re2.captures(key1) {
-            for (i, key) in keys.iter().enumerate() {
-                if path_var == &key.as_str()[1..] {
-                    return caps
-                        .get(i + 1)
-                        .map_or("".to_string(), |m| m.as_str().to_string());
-                }
-            }
-        }
-        "".to_string()
+    with_regex(&format!("^{}$", pattern), |re| {
+        key_get_captures(re, key1, &tokens, path_var)
     })
     .unwrap_or_default()
+}
+
+// The pattern variables are put into named groups, because key2 can carry
+// capture groups of its own, e.g. "/(a|b)/{id}".
+fn token_group(i: usize, expr: &str) -> String {
+    format!("(?P<{}>{})", token_group_name(i), expr)
+}
+
+fn token_group_name(i: usize) -> String {
+    format!("casbinToken{}", i)
+}
+
+fn key_get_captures(
+    re: &Regex,
+    key1: &str,
+    tokens: &[String],
+    path_var: &str,
+) -> String {
+    re.captures(key1)
+        .and_then(|caps| {
+            let i = tokens.iter().position(|t| t == path_var)?;
+            caps.name(&token_group_name(i))
+        })
+        .map_or_else(String::new, |m| m.as_str().to_string())
 }
 
 /// key_match3 determines whether key1 matches the pattern of key2 (similar to RESTful path), key2 can contain a *  
@@ -384,27 +403,19 @@ pub fn key_get3(key1: &str, key2: &str, path_var: &str) -> String {
         key2.into()
     };
 
-    let keys: Vec<_> = MAT_BRACE_PARAM.find_iter(&key2).collect();
-    let pattern = format!(
-        "^{}$",
-        MAT_BRACE_PARAM
-            .replace_all(&key2, "([^/]+?)")
-            .replace('{', "\\{")
-    );
+    let mut tokens = Vec::new();
+    let pattern = MAT_BRACE_PARAM
+        .replace_all(&key2, |caps: &regex::Captures| {
+            let group = token_group(tokens.len(), "[^/]+?");
+            tokens.push(caps[0][1..caps[0].len() - 1].to_string());
+            group
+        })
+        .replace('{', "\\{");
 
-    with_regex(&pattern, |re2| {
-        if let Some(caps) = re2.captures(key1) {
-            for (i, key) in keys.iter().enumerate() {
-                if path_var == &key.as_str()[1..key.as_str().len() - 1] {
-                    return caps
-                        .get(i + 1)
-                        .map_or("".to_string(), |m| m.as_str().to_string());
-                }
-            }
-        }
-        "".to_string()
+    with_regex(&format!("^{}$", pattern), |re| {
+        key_get_captures(re, key1, &tokens, path_var)
     })
-    .unwrap()
+    .unwrap_or_default()
 }
 
 /// KeyMatch4 determines whether key1 matches the pattern of key2 (similar to RESTful path), key2 can contain a *.  
@@ -414,15 +425,14 @@ pub fn key_get3(key1: &str, key2: &str, path_var: &str) -> String {
 ///
 /// But KeyMatch3 will match both.
 pub fn key_match4(key1: &str, key2: &str) -> bool {
-    let mut key2 = key2.replace("/*", "/.*");
+    let key2 = key2.replace("/*", "/.*");
     let mut tokens = Vec::new();
 
-    key2 = MAT_BRACE_PARAM
-        .replace_all(&key2, |caps: &regex::Captures| {
-            tokens.push(caps[0][1..caps[0].len() - 1].to_string());
-            "([^/]+)".to_string()
-        })
-        .to_string();
+    let key2 = MAT_BRACE_PARAM.replace_all(&key2, |caps: &regex::Captures| {
+        let group = token_group(tokens.len(), "[^/]+");
+        tokens.push(caps[0][1..caps[0].len() - 1].to_string());
+        group
+    });
 
     with_regex(&format!("^{}$", key2), |re| {
         key_match4_captures(re, key1, &tokens)
@@ -431,29 +441,19 @@ pub fn key_match4(key1: &str, key2: &str) -> bool {
 }
 
 fn key_match4_captures(re: &Regex, key1: &str, tokens: &[String]) -> bool {
-    if let Some(caps) = re.captures(key1) {
-        let matches: Vec<_> =
-            caps.iter().skip(1).map(|m| m.unwrap().as_str()).collect();
-        if tokens.len() != matches.len() {
-            panic!(
-                "KeyMatch4: number of tokens is not equal to number of values"
-            );
-        }
+    let caps = match re.captures(key1) {
+        Some(caps) => caps,
+        None => return false,
+    };
 
-        let mut values = HashMap::new();
-        for (token, value) in tokens.iter().zip(matches.iter()) {
-            if let Some(existing_value) = values.get(token) {
-                if *existing_value != value {
-                    return false;
-                }
-            } else {
-                values.insert(token, value);
-            }
+    let mut values = HashMap::new();
+    for (i, token) in tokens.iter().enumerate() {
+        let value = caps.name(&token_group_name(i)).map_or("", |m| m.as_str());
+        if *values.entry(token).or_insert(value) != value {
+            return false;
         }
-        true
-    } else {
-        false
     }
+    true
 }
 
 /// KeyMatch5 determines whether key1 matches the pattern of key2 (similar to RESTful path), key2 can contain a *  
@@ -801,6 +801,15 @@ mod tests {
             "/parent/123/child/123",
             "/parent/{i/d}/child/{i/d}"
         ));
+    }
+
+    #[test]
+    fn test_key_pattern_with_own_groups() {
+        assert_eq!(key_get2("/a/123", "/(a|b)/:id", "id"), "123");
+        assert_eq!(key_get3("/b/123", "/(a|b)/{id}", "id"), "123");
+        assert!(key_match4("/a/123/123", "/(a|b)/{id}/{id}"));
+        assert!(!key_match4("/a/123/456", "/(a|b)/{id}/{id}"));
+        assert!(!key_match4("/123/a/123", "/{id}/(a|b)/{id}x"));
     }
 
     #[test]
